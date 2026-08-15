@@ -92,4 +92,8 @@ main() {
     command -v pacman makepkg repo-add
 }
 
-main "$@"
+# Only run when executed, never when sourced: build-stage1.sh reuses
+# build_package() and must not re-run the whole bootstrap to get it.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
