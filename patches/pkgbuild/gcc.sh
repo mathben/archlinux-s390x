@@ -153,6 +153,13 @@ s = "\n".join(l for l in s.split("\n")
                and "mkdir -p \"$srcdir\"/libgccjit-build" not in l)
 io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 PY
+    # package_gcc() also installs the jit artefacts explicitly:
+    #   make -C gcc DESTDIR="$pkgdir" jit.install-common jit.install-info
+    # Removing the build block and the pkgname entry was not enough --
+    # this line runs in the MAIN package function and fails on a library
+    # that was never built:
+    #   install: cannot install libgccjit.so.0.0.1
+    sed -i '/jit\.install-common/d' PKGBUILD
     if grep -q 'libgccjit-build' PKGBUILD; then
         echo "gcc: libgccjit build block remains" >&2; exit 1
     fi
