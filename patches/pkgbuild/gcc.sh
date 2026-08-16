@@ -54,6 +54,11 @@ drop = {
     "gcc-ada", "gcc-d", "gcc-gcobol", "gcc-go", "gcc-m2", "gcc-rust",
     "libgm2", "libgo", "libgphobos", "libgcobol",
     "lib32-gcc-libs",
+    # __float128 est propre a x86 et ia64. s390x configure libquadmath
+    # -- le repertoire ne contient qu un Makefile et un config.log -- mais
+    # ne batit aucune bibliotheque, d ou l arret sur
+    #   mv: cannot stat 'usr/lib/libquadmath.a'
+    "libquadmath",
     # Hardware-assisted ASan exists on x86_64 and aarch64 only.
     "libhwasan",
 }
@@ -140,7 +145,7 @@ sed -i 's/^\(\s*for _so in \).*; do$/\1libatomic.so libstdc++.so; do/' PKGBUILD
 #
 # Dropping the entries from pkgname was not enough -- the _pick lines live in
 # package_gcc() and run regardless of which sub-packages are requested.
-for _lang in gcc-ada gcc-d gcc-go gcc-m2 gcc-rust gcc-gcobol \
+for _lang in gcc-ada gcc-d gcc-go gcc-m2 gcc-rust gcc-gcobol libquadmath \
              libgm2 libgo libgphobos libgcobol libhwasan; do
     sed -i "/_pick ${_lang} /d" PKGBUILD
 done
@@ -232,3 +237,13 @@ echo "gcc: front ends reduced, multilib off, lib32 removed"
 # applied here rather than globally.
 sed -i '0,/^build() {$/s//build() {\n  export MAKEFLAGS="-j8"/' PKGBUILD
 grep -A1 '^build() {' PKGBUILD | head -2 | sed 's/^/  /'
+
+# A depends= entry on libquadmath survives in another sub-package. Left in
+# place, the built package would declare a dependency that can never be
+# satisfied on this architecture -- harmless at build time with --nodeps,
+# fatal at install time. The unused package_libquadmath() function can stay:
+# makepkg never calls a function whose name is absent from pkgname.
+sed -i "/^\s*libquadmath$/d" PKGBUILD
+if sed -n "/^depends=(/,/^)/p" PKGBUILD | grep -q libquadmath; then
+    echo "gcc: libquadmath still declared as a dependency" >&2; exit 1
+fi
