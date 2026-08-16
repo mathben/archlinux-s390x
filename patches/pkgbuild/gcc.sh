@@ -86,6 +86,17 @@ sed -i '/lib32-gcc-libs: for generating code/d' PKGBUILD
 # usr/lib32 line right after it, in the same loop. Reading the error alone
 # sends you hunting for a missing libatomic that is in fact present.
 sed -i '/usr\/lib32/d; /_libdir\/32/d' PKGBUILD
+# Some 32-bit paths are written out in full rather than through
+# $_libdir/32, so the pattern above misses them:
+#   mv: cannot stat 'usr/lib/gcc/s390x-ibm-linux-gnu/16/32/finclude/'
+sed -i '/_pick .*\/32\//d' PKGBUILD
+# Others write BOTH paths with a brace expansion -- $_libdir/{,32/}finclude/
+# expands to the normal and the 32-bit path in one go. Deleting the line
+# would lose the normal path too, so only the 32-bit alternative goes.
+sed -i 's|{,32/}||g; s|{,32}||g' PKGBUILD
+if grep -qE '_pick .*(\{,32|/32/)' PKGBUILD; then
+    echo "gcc: a 32-bit _pick path remains" >&2; exit 1
+fi
 
 # The same loop links the D runtimes, which do not exist now that the D
 # front end is off.
