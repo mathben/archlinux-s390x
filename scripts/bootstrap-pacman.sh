@@ -74,6 +74,19 @@ configure_makepkg() {
     # pacman refuses to initialise alpm without its database directory. The
     # error is only a warning during packaging, but it hides real ones.
     sudo mkdir -p /var/lib/pacman
+    # CHOST must be the CANONICAL triplet, not the Debian-style one.
+    #
+    # gcc -dumpmachine reports s390x-linux-gnu here, but config.sub
+    # canonicalises that to s390x-ibm-linux-gnu, and GCC builds its tree
+    # under the canonical name. Arch PKGBUILDs assume the canonical form --
+    # theirs is x86_64-pc-linux-gnu, with the vendor field present -- so
+    # gcc's own PKGBUILD looked for $CHOST/libstdc++-v3/doc and found
+    # nothing:
+    #
+    #   make: *** s390x-linux-gnu/libstdc++-v3/doc: No such file or directory
+    #
+    # while the build had created s390x-ibm-linux-gnu/libstdc++-v3/doc.
+    sudo sed -i 's|^CHOST=.*|CHOST="s390x-ibm-linux-gnu"|' /etc/makepkg.conf
     grep -E '^(CARCH|CHOST|MAKEFLAGS)=' /etc/makepkg.conf
 }
 
