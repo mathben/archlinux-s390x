@@ -15,6 +15,8 @@
 # the z/VM round-trip the other scripts need.
 set -euo pipefail
 
+HERE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATCH_DIR="${PATCH_DIR:-$HERE_DIR/../patches/pkgbuild}"
 WORK="${WORK:-$HOME/work/arch-s390x}"
 REPO="${REPO:-$WORK/repo/s390x}"
 PACMAN_GIT="https://gitlab.archlinux.org/pacman/pacman.git"
@@ -24,15 +26,27 @@ log() { printf '\n== %s ==\n' "$*"; }
 
 install_host_deps() {
     log "Host build dependencies"
-    # bsdtar and fakeroot are makepkg's own requirements, not the package's:
-    # without them it fails deep inside extraction with a bare
-    # "bsdtar: command not found".
+    # Two distinct groups, and confusing them costs hours.
+    #
+    # makepkg's OWN requirements: bsdtar and fakeroot. Without them it fails
+    # deep inside extraction with a bare "bsdtar: command not found".
+    #
+    # The PKGBUILDs' makedepends: --nodeps tells pacman not to check them, so
+    # every one must be satisfied from the Ubuntu host by hand. Each name on
+    # the last three lines was added because a build stopped on it --
+    # systemtap-sdt-dev and gmp/mpfr/mpc for glibc and gcc, autopoint and
+    # gperf for coreutils, asciidoc for pacman, po4a for xz, gnat for gcc's
+    # Ada front end, debuginfod and jansson for binutils.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
         libarchive-tools fakeroot \
         build-essential autoconf automake libtool m4 patch texinfo bison flex \
-        zstd xz-utils bzip2
+        zstd xz-utils bzip2 \
+        systemtap-sdt-dev asciidoc autopoint gperf help2man rsync \
+        libgmp-dev libmpfr-dev libmpc-dev python3-docutils \
+        libseccomp-dev libpcre2-dev \
+        po4a gnat libdebuginfod-dev libjansson-dev
 }
 
 build_pacman() {
@@ -69,6 +83,9 @@ configure_makepkg() {
 # --skipchecksums: GitLab regenerates .patch URLs, so their checksums drift
 #   from what the PKGBUILD recorded. Release tarballs still validate; only
 #   the generated patches are skipped.
+# --nocheck: stage-1 test suites run against the HOST libraries, not Arch's,
+#   so their verdict says nothing about the port. acl failed its check() on a
+#   perfectly sound build, and the suites cost hours. Stage 2 runs them.
 build_package() {
     local name="$1"
     log "Building $name"
@@ -76,11 +93,42 @@ build_package() {
     [ -d "$WORK/pkg/$name" ] || \
         git clone --depth 1 "$PKG_GIT_BASE/$name.git" "$WORK/pkg/$name"
     cd "$WORK/pkg/$name"
-    makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums -f
+    # Port patches. Upstream PKGBUILDs are written for x86_64 and some carry
+    # flags no other architecture accepts -- glibc's --enable-sframe is the
+    # first. They are applied here, one hook per package, so each change is
+    # visible, reviewable and survives a re-clone, rather than being an edit
+    # someone once made by hand in a working copy.
+    local hook="$PATCH_DIR/$name.sh"
+    if [ -f "$hook" ]; then
+        git checkout -- PKGBUILD 2>/dev/null || true
+        bash "$hook" || return 1
+    fi
+    rm -f ./*.pkg.tar.*
+    # Explicit `|| return 1`. Relying on `set -e` here does NOT work: callers
+    # invoke build_package inside `if`, which disables set -e for the whole
+    # function body. A failing makepkg then fell through to repo-add, whose
+    # success became the function's exit status -- and a run reported
+    # "51 built, 0 failed" while glibc, gcc, coreutils and pacman had all
+    # failed. Measured: the repository held 23 files, not a hundred.
+    makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck -f \
+        || return 1
+    # An exit code is not proof. Only the artefact is.
+    local produced=()
+    shopt -s nullglob
+    produced=(./*.pkg.tar.*)
+    shopt -u nullglob
+    if [ "${#produced[@]}" -eq 0 ]; then
+        echo "no package produced for $name" >&2
+        return 1
+    fi
     mkdir -p "$REPO"
-    cp -f ./*.pkg.tar.* "$REPO/"
-    cd "$REPO"
-    repo-add core.db.tar.gz ./*.pkg.tar.*
+    cp -f "${produced[@]}" "$REPO/" || return 1
+    # Only the new packages. Globbing the whole repository made repo-add
+    # re-index everything on every call: quadratic, and it buried the real
+    # lines under warnings about entries that already existed.
+    local names=() f
+    for f in "${produced[@]}"; do names+=("$(basename "$f")"); done
+    ( cd "$REPO" && repo-add core.db.tar.gz "${names[@]}" ) || return 1
 }
 
 main() {
@@ -93,7 +141,7 @@ main() {
 }
 
 # Only run when executed, never when sourced: build-stage1.sh reuses
-# build_package() and must not re-run the whole bootstrap to get it.
+# build_package and must not re-run the whole bootstrap to get it.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
