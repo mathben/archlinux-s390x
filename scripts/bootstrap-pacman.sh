@@ -123,8 +123,15 @@ build_package() {
     # success became the function's exit status -- and a run reported
     # "51 built, 0 failed" while glibc, gcc, coreutils and pacman had all
     # failed. Measured: the repository held 23 files, not a hundred.
-    makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck -f \
-        || return 1
+    # -C wipes $srcdir first. Without it a re-run inherits the previous
+    # attempt's tree, and prepare() fails on work it already did:
+    #   patch: ... already exists!  Skipping patch.
+    #   1 out of 1 hunk ignored
+    #   mkdir: build-curl-compat: File exists
+    # grep, gnupg, pacman and curl all failed this way -- not on the
+    # port, but on my own driver re-entering a dirty directory.
+    makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck \
+        -C -f || return 1
     # An exit code is not proof. Only the artefact is.
     local produced=()
     shopt -s nullglob

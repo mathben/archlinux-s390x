@@ -91,6 +91,21 @@ sed -i '/usr\/lib32/d; /_libdir\/32/d' PKGBUILD
 # front end is off.
 sed -i 's/^\(\s*for _so in \).*; do$/\1libatomic.so libstdc++.so; do/' PKGBUILD
 
+# package_gcc() also _picks files out for every sub-package, including the
+# front ends we disabled. _pick is a mv, so it fails on what was never built:
+#
+#   mv: cannot stat 'usr/bin/gnat': No such file or directory
+#
+# Dropping the entries from pkgname was not enough -- the _pick lines live in
+# package_gcc() and run regardless of which sub-packages are requested.
+for _lang in gcc-ada gcc-d gcc-go gcc-m2 gcc-rust gcc-gcobol \
+             libgm2 libgo libgphobos libgcobol libhwasan; do
+    sed -i "/_pick ${_lang} /d" PKGBUILD
+done
+if grep -qE '_pick (gcc-ada|gcc-d|gcc-go|gcc-m2|gcc-rust|gcc-gcobol) ' PKGBUILD; then
+    echo "gcc: _pick lines remain for a disabled front end" >&2; exit 1
+fi
+
 if grep -q 'usr/lib32' PKGBUILD; then
     echo "gcc: usr/lib32 still manipulated" >&2; exit 1
 fi
