@@ -26,7 +26,13 @@
 # removals are permanent -- they are architectural.
 set -euo pipefail
 
-sed -i 's/^\(\s*--enable-languages=\).*\\$/\1c,c++,fortran,lto,objc,obj-c++ \\/' PKGBUILD
+# Only the MAIN build. The PKGBUILD configures gcc twice: once for the
+# compiler, once for libgccjit with --enable-languages=jit. Rewriting
+# every occurrence clobbered the second one, so the jit tree built a
+# compiler instead of a library and package() died on
+#   cp: cannot stat 'gcc/libgccjit.so*': No such file or directory
+# after forty minutes of compiling. Match the language list, never 'jit'.
+sed -i '/--enable-languages=jit/!s/^\(\s*--enable-languages=\).*\\$/\1c,c++,fortran,lto,objc,obj-c++ \\/' PKGBUILD
 if grep -qE 'enable-languages=[^ ]*(ada|,d,|m2|cobol)' PKGBUILD; then
     echo "gcc: a self-hosted front end is still enabled" >&2; exit 1
 fi
