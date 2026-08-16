@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Minimal stand-in for devtools' arch-meson.
+#
+# A number of Arch PKGBUILDs call arch-meson rather than meson directly. It
+# ships in the `devtools` package, which is itself an Arch package -- so
+# during a bootstrap it does not exist yet, and every PKGBUILD that uses it
+# stops on "arch-meson: command not found".
+#
+# This reproduces the options devtools passes, which are what the PKGBUILDs
+# assume: /usr prefix, plain buildtype so makepkg's CFLAGS are honoured
+# verbatim, and no network access for subprojects.
+exec meson setup \
+    --prefix        /usr \
+    --libexecdir    lib \
+    --sbindir       bin \
+    --buildtype     plain \
+    --auto-features enabled \
+    --wrap-mode     nodownload \
+    -D b_pie=true \
+    -D python.bytecompile=1 \
+    "$@"

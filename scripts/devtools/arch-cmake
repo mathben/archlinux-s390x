@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Minimal stand-in for devtools' arch-cmake, same reasoning as arch-meson.
+exec cmake \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_INSTALL_LIBEXECDIR=lib \
+    -DCMAKE_INSTALL_SBINDIR=bin \
+    -DBUILD_SHARED_LIBS=ON \
+    -Wno-dev \
+    "$@"
