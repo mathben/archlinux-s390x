@@ -75,6 +75,30 @@ sed -i '/^\s*lib32-gcc-libs\s*$/d' PKGBUILD
 sed -i '/_pick lib32-gcc-libs/d' PKGBUILD
 sed -i '/lib32-gcc-libs: for generating code/d' PKGBUILD
 
+# package_gcc() still manipulates the 32-bit tree in several places, and
+# every one of them fails once multilib is off, because usr/lib32 never
+# exists:
+#
+#   'usr/lib/gcc/s390x-ibm-linux-gnu/16/libatomic.so' -> '../../../libatomic.so'
+#   ln: No such file or directory
+#
+# The link that is reported is the one that SUCCEEDED; the failure is the
+# usr/lib32 line right after it, in the same loop. Reading the error alone
+# sends you hunting for a missing libatomic that is in fact present.
+sed -i '/usr\/lib32/d; /_libdir\/32/d' PKGBUILD
+
+# The same loop links the D runtimes, which do not exist now that the D
+# front end is off.
+sed -i 's/^\(\s*for _so in \).*; do$/\1libatomic.so libstdc++.so; do/' PKGBUILD
+
+if grep -q 'usr/lib32' PKGBUILD; then
+    echo "gcc: usr/lib32 still manipulated" >&2; exit 1
+fi
+if grep -qE 'for _so in .*(gdruntime|gphobos)' PKGBUILD; then
+    echo "gcc: D runtimes still in the symlink loop" >&2; exit 1
+fi
+grep -m1 'for _so in' PKGBUILD | sed 's/^\s*//'
+
 # Verify what matters: the array makepkg iterates. Grepping the whole file
 # for the bare name declared a false failure once already, on libtool and
 # then here -- the string survives in comments and in unused functions.
@@ -82,4 +106,46 @@ if sed -n '/^pkgname=(/,/^)/p' PKGBUILD | grep -q 'lib32'; then
     echo "gcc: lib32 still in pkgname array" >&2; exit 1
 fi
 grep -m1 -- '--enable-languages' PKGBUILD
+
+# libgccjit: OPTIONAL, and off by default.
+#
+# Arch configures and compiles the entire gcc source tree a SECOND time just
+# for libgccjit -- it needs --enable-host-shared, which would slow the main
+# compiler down if applied to it. That second pass is roughly half of gcc's
+# build time, and on this hardware that is twenty minutes per attempt.
+#
+# Nothing in the bootstrap needs it, and neither does ERPLibre. It is
+# skipped by default and re-enabled with:
+#
+#     EL_GCC_JIT=1 bash scripts/build-stage1.sh
+#
+# When enabled, nothing below runs and the PKGBUILD keeps its upstream
+# behaviour, including the --enable-languages=jit line the main-build sed
+# deliberately leaves alone.
+if [ "${EL_GCC_JIT:-0}" != "1" ]; then
+    python3 - <<'PY'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+# The second configure pass, from its comment to the copy of the .so.
+s = re.sub(
+    r"\n  # Build libgccjit separately.*?\n  cp -a gcc/libgccjit\.so\* \.\./gcc-build/gcc/\n",
+    "\n", s, flags=re.S)
+# Its package function, the _pick lines that feed it, and its pkgname entry.
+s = re.sub(r"\npackage_libgccjit\(\)\s*\{.*?\n\}\n", "\n", s, flags=re.S)
+s = "\n".join(l for l in s.split("\n")
+               if "_pick libgccjit" not in l
+               and l.strip() != "libgccjit"
+               and "mkdir -p \"$srcdir\"/libgccjit-build" not in l)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+PY
+    if grep -q 'libgccjit-build' PKGBUILD; then
+        echo "gcc: libgccjit build block remains" >&2; exit 1
+    fi
+    if sed -n '/^pkgname=(/,/^)/p' PKGBUILD | grep -q 'libgccjit'; then
+        echo "gcc: libgccjit still in pkgname array" >&2; exit 1
+    fi
+    echo "gcc: libgccjit skipped (set EL_GCC_JIT=1 to build it)"
+else
+    echo "gcc: libgccjit ENABLED (second full build of the tree)"
+fi
 echo "gcc: front ends reduced, multilib off, lib32 removed"
