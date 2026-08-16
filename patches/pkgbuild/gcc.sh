@@ -94,6 +94,37 @@ sed -i '/_pick .*\/32\//d' PKGBUILD
 # expands to the normal and the 32-bit path in one go. Deleting the line
 # would lose the normal path too, so only the 32-bit alternative goes.
 sed -i 's|{,32/}||g; s|{,32}||g' PKGBUILD
+
+# s390x GCC installs 64-bit libraries into usr/lib64; Arch's layout is usr/lib
+# everywhere. package_gcc() therefore looked for files that were one directory
+# away:
+#
+#   mv: cannot stat 'usr/lib/libgfortran.spec': No such file or directory
+#
+# while the file sat in usr/lib64/libgfortran.spec. This is not one stray
+# file -- lib64 is GCC's default MULTILIB_OSDIRNAMES for 64-bit Z, so the
+# whole package layout is affected, and every _pick that names usr/lib would
+# miss in the same way.
+#
+# The trees are merged before any _pick runs, which keeps the upstream
+# package definitions working unchanged rather than rewriting each path.
+python3 - <<'PY'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+merge = """  # s390x installs 64-bit libraries to lib64; Arch expects lib.
+  if [ -d usr/lib64 ]; then
+    mkdir -p usr/lib
+    cp -a usr/lib64/. usr/lib/
+    rm -rf usr/lib64
+  fi
+"""
+i = s.index("    _pick ")
+s = s[:i] + merge + s[i:]
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+PY
+grep -q 'installs 64-bit libraries to lib64' PKGBUILD || {
+    echo "gcc: lib64 merge not inserted" >&2; exit 1; }
+echo "gcc: lib64 merged into lib before packaging"
 if grep -qE '_pick .*(\{,32|/32/)' PKGBUILD; then
     echo "gcc: a 32-bit _pick path remains" >&2; exit 1
 fi
