@@ -48,12 +48,19 @@ STAGE1_PACKAGES=(
     filesystem iana-etc tzdata licenses shadow util-linux
     # Named by the chroot test, not guessed. Installing the repo into a
     # rootfs and entering it turned "does it work?" into a precise list:
-    #   - coreutils links against libselinux, and would not start without it
     #   - libcap needs pam; openssl needs brotli; libarchive needs libxml2
     #   - pacman itself asks for systemd, pacman-mirrorlist and
     #     libmakepkg-dropins
     # Sixty-eight successful builds proved none of this. One chroot did.
-    libselinux pam brotli libxml2 systemd pacman-mirrorlist libmakepkg-dropins
+    #
+    # The chroot also named libselinux, and libselinux is NOT on this line,
+    # because that reading of it was wrong. Arch has no libselinux package at
+    # all -- the clone 404s. What the chroot saw was a HOST artefact: Ubuntu
+    # carries libselinux1-dev, coreutils probes for selinux/selinux.h
+    # unconditionally, and ours came out linked to a library the target will
+    # never contain. The answer is --without-selinux per package, which is
+    # what Arch's own build chroot gets for free by not having the header.
+    pam brotli libxml2 systemd pacman-mirrorlist libmakepkg-dropins
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
