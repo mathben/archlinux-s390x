@@ -37,6 +37,30 @@ install_host_deps() {
     # systemtap-sdt-dev and gmp/mpfr/mpc for glibc and gcc, autopoint and
     # gperf for coreutils, asciidoc for pacman, po4a for xz, gnat for gcc's
     # Ada front end, debuginfod and jansson for binutils.
+    #
+    # THE LIST WAS ALSO A LIE BY OMISSION. An audit of the six packages that
+    # follow found libreadline-dev, libncurses-dev, zlib1g-dev, python3-dev,
+    # doxygen, xsltproc, docbook-xsl, elinks and libcap2-bin already present
+    # on the build VM but installed BY HAND, never declared here. On this
+    # host they made the builds pass; on a fresh Ubuntu they would have
+    # failed at readline, at libxml2 and inside shadow's `make install`, for
+    # reasons that have nothing to do with s390x. They are named below now.
+    # The rest is per-package, and each group says which package needs it.
+    #
+    #   gnupg     imagemagick + fig2dev render doc/*.svg and doc/*.fig, which
+    #             a git checkout must generate; librsvg2-bin guarantees the
+    #             SVG coder even under --no-install-recommends.
+    #   shadow    itstool builds the translated man pages; libcap2-bin gives
+    #             the bare `setcap` its install rule calls.
+    #   util-linux  asciidoctor -- Ruby, and NOT the `asciidoc` above, which
+    #             is a different program added for pacman. Easy to mistake
+    #             for coverage.
+    #   pam       libnsl/libtirpc for NIS, the DocBook 5 catalog, and elinks,
+    #             which meson uses to dump the HTML manuals to text.
+    #   brotli    cmake, and the PEP 517 chain its python bindings build with.
+    #   libxml2   ICU, readline, and the doc toolchain.
+    #   systemd   the widest surface of anything in stage 1; every one of
+    #             these was checked against a real meson configure.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -46,7 +70,19 @@ install_host_deps() {
         systemtap-sdt-dev asciidoc autopoint gperf help2man rsync \
         libgmp-dev libmpfr-dev libmpc-dev python3-docutils \
         libseccomp-dev libpcre2-dev \
-        po4a gnat libdebuginfod-dev libjansson-dev
+        po4a gnat libdebuginfod-dev libjansson-dev \
+        libreadline-dev libncurses-dev zlib1g-dev python3-dev \
+        doxygen xsltproc docbook-xsl libcap2-bin \
+        imagemagick fig2dev librsvg2-bin \
+        itstool asciidoctor \
+        libtirpc-dev libnsl-dev docbook5-xml docbook-xsl-ns elinks \
+        cmake python3-build python3-installer python3-pkgconfig \
+        python3-setuptools python3-wheel \
+        libicu-dev \
+        libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
+        libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
+        libfido2-dev libtss2-dev libmicrohttpd-dev libaudit-dev \
+        libcryptsetup-dev libgcrypt20-dev libgnutls28-dev libpam0g-dev
     install_host_shims
 }
 
@@ -62,6 +98,39 @@ install_host_shims() {
     log "Host shims"
     local d="$HERE_DIR/devtools"
     sudo install -m755 "$d/arch-meson" "$d/arch-cmake" /usr/local/bin/
+    # history.pc, which Ubuntu drops and Arch ships.
+    #
+    # GNU readline generates and installs BOTH readline.pc and history.pc;
+    # Debian and Ubuntu keep the first and delete the second, while the
+    # library, libhistory.so, is right there in libreadline-dev. libxml2 asks
+    # pkg-config for `history` and stops:
+    #
+    #   libxml2/meson.build:353:18: ERROR: Dependency "history" not found
+    #
+    # THE TRAP: our own readline package in repo/s390x DOES ship a correct
+    # history.pc, so copying that one looks like the tidy answer. It is not.
+    # Its libdir is ${exec_prefix}/lib -- right for the target rootfs, wrong
+    # for a multiarch host where /usr/lib holds no libhistory. The .pc has to
+    # describe THIS host, so it is generated from the host's own readline.pc.
+    local multiarch version
+    multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+    version="$(pkg-config --modversion readline)"
+    sudo mkdir -p /usr/local/lib/pkgconfig
+    printf '%s\n' \
+        "prefix=/usr" \
+        "exec_prefix=\${prefix}" \
+        "libdir=/usr/lib/$multiarch" \
+        "includedir=\${prefix}/include" \
+        "" \
+        "Name: History" \
+        "Description: GNU History library" \
+        "Version: $version" \
+        "Requires.private: tinfo" \
+        "Libs: -L\${libdir} -lhistory" \
+        "Cflags: -I\${includedir}" \
+        | sudo tee /usr/local/lib/pkgconfig/history.pc > /dev/null
+    pkg-config --exists history || {
+        echo "history.pc still not visible to pkg-config" >&2; return 1; }
 }
 
 build_pacman() {
