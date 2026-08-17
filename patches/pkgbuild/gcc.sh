@@ -238,12 +238,59 @@ echo "gcc: front ends reduced, multilib off, lib32 removed"
 sed -i '0,/^build() {$/s//build() {\n  export MAKEFLAGS="-j8"/' PKGBUILD
 grep -A1 '^build() {' PKGBUILD | head -2 | sed 's/^/  /'
 
-# A depends= entry on libquadmath survives in another sub-package. Left in
-# place, the built package would declare a dependency that can never be
-# satisfied on this architecture -- harmless at build time with --nodeps,
-# fatal at install time. The unused package_libquadmath() function can stay:
-# makepkg never calls a function whose name is absent from pkgname.
-sed -i "/^\s*libquadmath$/d" PKGBUILD
-if sed -n "/^depends=(/,/^)/p" PKGBUILD | grep -q libquadmath; then
-    echo "gcc: libquadmath still declared as a dependency" >&2; exit 1
-fi
+# THE FIFTH PLACE. The repository already knew a component is removed in four
+# independent places -- pkgname, the build block, the _pick lines and the
+# explicit make targets. There is a fifth: the depends= array of a DIFFERENT
+# sub-package.
+#
+# It is the only one that fails silently. --nodeps means makepkg never checks,
+# so the build succeeds and the package goes into the repository declaring a
+# dependency on something this architecture will never produce. Nothing says a
+# word until an install is attempted, which for a bootstrap is much later:
+#
+#   :: unable to satisfy dependency 'libhwasan' required by gcc-libs
+#
+# This was already paid for once. A previous pass hit it with libquadmath and
+# pruned that one name by hand; libhwasan was added to the drop set afterwards
+# and the pruning was not extended, so gcc-libs shipped uninstallable. Pruning
+# one name at a time is the bug, not the missing name.
+#
+# So the same `drop` set that decides what is NOT built now also decides what
+# is not depended on, and the check below asserts it rather than trusting it.
+# Adding a name to that set is now enough, in one place.
+#
+# Both spellings occur: a bare name in a sub-package's depends, and the
+# versioned "libhwasan=$pkgver-$pkgrel" form in gcc's own. The unused
+# package_libhwasan() function can stay -- makepkg never calls a function
+# whose name is absent from pkgname.
+python3 - <<'PY'
+import io, re
+drop = ["libhwasan", "libquadmath", "lib32-gcc-libs",
+        "libgm2", "libgo", "libgphobos", "libgcobol"]
+s = io.open("PKGBUILD", encoding="utf-8").read()
+
+def prune(block):
+    out = []
+    for ln in block.splitlines(True):
+        bare = ln.strip().strip('"\'')
+        name = bare.split("=")[0]
+        if name in drop and (bare == name or bare.startswith(name + "=")):
+            continue
+        out.append(ln)
+    return "".join(out)
+
+# Every depends array in the file: the top-level one and each sub-package's.
+s = re.sub(r"(?<=depends=\()[^)]*(?=\))", lambda m: prune(m.group(0)), s)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+
+# Assert, do not hope. Any dropped name still inside a depends array is a
+# package we would ship unable to install.
+left = []
+for m in re.finditer(r"depends=\(([^)]*)\)", s):
+    for ln in m.group(1).splitlines():
+        bare = ln.strip().strip('"\'').split("=")[0]
+        if bare in drop:
+            left.append(bare)
+assert not left, "gcc: dropped names still depended on: %s" % sorted(set(left))
+print("gcc: depends pruned of %d dropped components" % len(drop))
+PY
