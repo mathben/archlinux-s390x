@@ -23,3 +23,22 @@ io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 PY
 grep -q '"s390x" | "riscv64")' PKGBUILD || { echo "openssl: case not extended" >&2; exit 1; }
 echo "openssl: Configure target set to linux64-s390x (linux-s390x is 31-bit)"
+
+# enable-ec_nistp_64_gcc_128: little-endian only.
+#
+#   crypto/ec/ec_local.h:520:2: error:
+#     "Can not enable ec_nistp_64_gcc_128 on big-endian systems"
+#
+# Arch turns on this elliptic-curve optimisation, which uses a 128-bit
+# integer representation that assumes little-endian byte order. s390x is
+# BIG-endian -- the first time endianness, rather than word size or
+# instruction set, decides anything in this port.
+#
+# OpenSSL refuses at compile time rather than producing wrong results, which
+# is the right behaviour and makes this one honest to diagnose. Dropping the
+# flag costs some NIST curve performance and nothing else: the curves still
+# work through the portable implementation.
+sed -i '/enable-ec_nistp_64_gcc_128/d' PKGBUILD
+grep -q 'enable-ec_nistp_64_gcc_128' PKGBUILD && {
+    echo "openssl: little-endian EC optimisation still enabled" >&2; exit 1; }
+echo "openssl: ec_nistp_64_gcc_128 disabled (s390x is big-endian)"
