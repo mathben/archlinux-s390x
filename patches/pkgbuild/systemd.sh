@@ -81,3 +81,48 @@ grep -q -- '-Dvmlinux-h=generated' PKGBUILD || {
 grep -q -- '-Dvmlinux-h-path' PKGBUILD && {
     echo "systemd: stale vmlinux-h-path left in place" >&2; exit 1; }
 echo "systemd: vmlinux.h generated from /sys/kernel/btf/vmlinux"
+
+# 3. -Dsplit-bin=auto: the question is answered by the HOST, not the target.
+#
+#   systemd/meson.build:123
+#     sbindir = prefixdir / (split_bin ? 'sbin' : 'bin')
+#
+# split-bin is a combo defaulting to 'auto', and 'auto' probes whether
+# /usr/sbin on the BUILD MACHINE is a symlink to bin. On Arch it is, so
+# split_bin is false and everything lands in /usr/bin. Here /usr/sbin is a
+# real directory, and meson-log.txt says so:
+#
+#   split bin-sbin                           : true
+#
+# THE TRAP is that arch-meson ALREADY passes --sbindir bin, and
+# `meson configure` dutifully reports sbindir = bin. It is ignored: systemd
+# computes its own sbindir from split_bin and never reads meson's builtin. The
+# option that looks like the fix is not the fix, and the one that is mentions
+# neither sbin nor a directory in its name.
+#
+# Nothing fails in build(). It fails much later, in package_systemd(), on the
+# first line that names a path:
+#
+#   rm: cannot remove '<pkgdir>/usr/bin/halt': No such file or directory
+#
+# because halt, init, poweroff, reboot, shutdown and resolvconf all went to
+# /usr/sbin -- along with mount.ddi, mount.mstack and mount.storage, which the
+# PKGBUILD never mentions at all. The rm is only the first victim. Suppress it
+# and the package ships /usr/sbin as a DIRECTORY, which collides on the target
+# with the ["usr/sbin"]="bin" SYMLINK our own filesystem package declares.
+#
+# Measured on a configured copy: with split-bin=false there is no /usr/sbin in
+# the install tree at all, and all six paths are where package() looks.
+#
+# Same species as arch-meson's --libdir -- an Ubuntu default standing in for
+# an Arch one -- but it cannot live in arch-meson: split-bin is systemd's own
+# option, not a meson builtin. --auto-features does not reach it either; it is
+# a combo, not a feature.
+test "$(grep -c -- '-Dcompat-sysv-interfaces=false' PKGBUILD)" -eq 1 || {
+    echo "systemd: expected exactly one _meson_options array" >&2; exit 1; }
+test "$(grep -c -- '-Dsplit-bin' PKGBUILD)" -eq 0 || {
+    echo "systemd: PKGBUILD already sets split-bin, re-read it" >&2; exit 1; }
+sed -i 's/^\( *\)-Dcompat-sysv-interfaces=false/\1-Dsplit-bin=false\n\1-Dcompat-sysv-interfaces=false/' PKGBUILD
+grep -q -- '-Dsplit-bin=false' PKGBUILD || {
+    echo "systemd: split-bin still auto (would install into /usr/sbin)" >&2; exit 1; }
+echo "systemd: split-bin=false (Ubuntu's /usr/sbin is not Arch's)"

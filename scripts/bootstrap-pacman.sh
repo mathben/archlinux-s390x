@@ -82,7 +82,8 @@ install_host_deps() {
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
         libfido2-dev libtss2-dev libmicrohttpd-dev libaudit-dev \
-        libcryptsetup-dev libgcrypt20-dev libgnutls28-dev libpam0g-dev
+        libcryptsetup-dev libgcrypt20-dev libgnutls28-dev libpam0g-dev \
+        python3-pefile
     install_host_shims
 }
 
@@ -254,6 +255,28 @@ build_package() {
     #   mkdir: build-curl-compat: File exists
     # grep, gnupg, pacman and curl all failed this way -- not on the
     # port, but on my own driver re-entering a dirty directory.
+    # LC_ALL=C.UTF-8, because build systems parse their tools' output.
+    #
+    # This host runs LANG=fr_FR.UTF-8. util-linux's poman-translate.sh reads
+    # po4a's report and skips what it says it discarded:
+    #
+    #   DISCARDED_TRANSLATION=$(echo "$line" | awk '/Discard/ {print $2;}')
+    #
+    # -- an English word matched against a gettext-translated message. In
+    # French po4a prints "Rejet de ar/..." instead, so the skip list came out
+    # empty, asciidoctor was handed 852 files po4a had never written, and the
+    # build died on the first. Note $2 is "de" in French: even a locale-aware
+    # pattern would take the wrong field.
+    #
+    # It went unseen for a second reason -- the script captures po4a in
+    # `output=$(...)`, so none of those 852 lines reach the log at all.
+    #
+    # The locale is a property of THIS host, not of any one package, and any
+    # build that greps English tool output is exposed. So it is pinned here,
+    # once, rather than in a hook per package. C.UTF-8 and not C: the Arabic
+    # and Ukrainian pages must stay valid UTF-8. Arch's own build chroot runs
+    # in this locale, so this makes us match it rather than diverge.
+    LC_ALL=C.UTF-8 \
     makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck \
         -C -f || return 1
     # An exit code is not proof. Only the artefact is.
