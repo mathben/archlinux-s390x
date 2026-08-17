@@ -53,7 +53,7 @@ build_pacman() {
     log "pacman + makepkg + repo-add"
     mkdir -p "$WORK"
     [ -d "$WORK/pacman" ] || git clone --depth 1 "$PACMAN_GIT" "$WORK/pacman"
-    cd "$WORK/pacman"
+    cd "$WORK/pacman" || return 1
     # /usr/local, never /usr: this host is Ubuntu and /usr belongs to dpkg.
     # makepkg resolves its own libraries from the configured prefix, so the
     # prefix has to be real -- running it from the build tree fails with
@@ -121,9 +121,31 @@ build_package() {
     local name="$1"
     log "Building $name"
     mkdir -p "$WORK/pkg"
-    [ -d "$WORK/pkg/$name" ] || \
-        git clone --depth 1 "$PKG_GIT_BASE/$name.git" "$WORK/pkg/$name"
-    cd "$WORK/pkg/$name"
+    # Both guards are load-bearing, and their absence cost a whole run.
+    #
+    # gitlab.archlinux.org answers a 404 by asking for credentials, so a
+    # package that does not exist fails as
+    #
+    #   fatal: could not read Username for 'https://gitlab.archlinux.org'
+    #
+    # GIT_TERMINAL_PROMPT=0 turns that into an immediate error instead of a
+    # process waiting on a terminal that is not there.
+    #
+    # Then the cd. With neither guarded, a failed clone left makepkg running
+    # in whatever directory the PREVIOUS package used -- it rebuilt that
+    # package, wrote the output into THIS package's log, and copied the
+    # artefact back into the repository. log-libselinux.txt was 119 KB of
+    # util-linux. The lesson is the repository's oldest one, one level up:
+    # an exit code proves nothing, and neither does a log file's NAME.
+    if [ ! -d "$WORK/pkg/$name" ]; then
+        GIT_TERMINAL_PROMPT=0 \
+            git clone --depth 1 "$PKG_GIT_BASE/$name.git" "$WORK/pkg/$name" || {
+            rm -rf "$WORK/pkg/$name"
+            echo "clone failed: $PKG_GIT_BASE/$name.git" >&2
+            return 1
+        }
+    fi
+    cd "$WORK/pkg/$name" || return 1
     # Port patches. Upstream PKGBUILDs are written for x86_64 and some carry
     # flags no other architecture accepts -- glibc's --enable-sframe is the
     # first. They are applied here, one hook per package, so each change is
