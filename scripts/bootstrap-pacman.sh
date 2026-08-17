@@ -74,6 +74,24 @@ configure_makepkg() {
     # pacman refuses to initialise alpm without its database directory. The
     # error is only a warning during packaging, but it hides real ones.
     sudo mkdir -p /var/lib/pacman
+    # Arch's numeric group ids must EXIST on the build host.
+    #
+    # The filesystem package creates directories with `install -g 11`, and
+    # GNU coreutils rejects a gid that resolves to nothing:
+    #
+    #   install: invalid group: '11'
+    #
+    # gid 11 is `ftp` on Arch; Ubuntu leaves it free. This is the circular
+    # corner of any bootstrap -- the package that DEFINES /etc/group needs
+    # groups that do not exist yet -- and the way out is to give the build
+    # host the target's id map rather than to work around the check.
+    #
+    # Only the ids Arch uses and Ubuntu lacks are created, and only when
+    # missing, so an already-correct host is left alone.
+    if ! getent group 11 > /dev/null 2>&1; then
+        sudo groupadd -g 11 ftp
+        echo "created group ftp (gid 11), required by the filesystem package"
+    fi
     # CHOST must be the CANONICAL triplet, not the Debian-style one.
     #
     # gcc -dumpmachine reports s390x-linux-gnu here, but config.sub
