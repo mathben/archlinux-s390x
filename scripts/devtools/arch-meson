@@ -9,8 +9,44 @@
 # This reproduces the options devtools passes, which are what the PKGBUILDs
 # assume: /usr prefix, plain buildtype so makepkg's CFLAGS are honoured
 # verbatim, and no network access for subprojects.
+#
+# TWO OPTIONS BELOW ARE NOT IN REAL devtools, AND COPYING devtools VERBATIM
+# IS THE BUG THEY FIX. On Arch these defaults are already right, so devtools
+# has nothing to say. We run on Ubuntu, where meson answers differently.
+#
+# --libdir. meson's default (utils/universal.py, default_libdir):
+#
+#     if is_debianlike():                       # /etc/debian_version exists
+#         dpkg-architecture -qDEB_HOST_MULTIARCH
+#         return 'lib/' + archpath              # -> lib/s390x-linux-gnu
+#
+# So every arch-meson package installed into /usr/lib/s390x-linux-gnu while
+# its PKGBUILD went on naming /usr/lib. Nothing complained: makepkg exited 0
+# and the packages went into the repo with their libraries somewhere no Arch
+# ld.so and no pkgconf will ever look. util-linux is where it finally shouted,
+#
+#     rm: cannot remove '.../pkg/util-linux/usr/lib/lib*.a*': No such file
+#
+# and even there the rm was the first victim, not the cause -- the
+# `mv usr/lib/lib*.so*` two lines below would have shipped an EMPTY
+# util-linux-libs. Measured before the fix: expat, lz4, pacman, pkgconf and
+# zstd were already in repo/s390x carrying multiarch paths, libalpm.so.16
+# among them.
+#
+# --libdir sits BEFORE "$@" so a PKGBUILD passing its own still wins: meson's
+# argparse takes the last occurrence.
+#
+# python.platlibdir / python.purelibdir. The same divergence one layer up:
+# meson's python module uses Debian's `deb_system` scheme and installs to
+# /usr/lib/python3/dist-packages, which Arch's python does not read. The
+# value is derived from the interpreter rather than hardcoded, because that
+# is exactly how the PKGBUILDs derive theirs -- util-linux's package() moves
+# `$(python -c 'sysconfig.get_paths()["stdlib"]')/site-packages`, so deriving
+# it the same way makes the two agree by construction instead of by luck.
+_pystdlib="$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"])')"
 exec meson setup \
     --prefix        /usr \
+    --libdir        lib \
     --libexecdir    lib \
     --sbindir       bin \
     --buildtype     plain \
@@ -18,4 +54,6 @@ exec meson setup \
     --wrap-mode     nodownload \
     -D b_pie=true \
     -D python.bytecompile=1 \
+    -D python.platlibdir="$_pystdlib/site-packages" \
+    -D python.purelibdir="$_pystdlib/site-packages" \
     "$@"

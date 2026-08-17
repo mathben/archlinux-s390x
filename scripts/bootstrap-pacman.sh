@@ -47,6 +47,21 @@ install_host_deps() {
         libgmp-dev libmpfr-dev libmpc-dev python3-docutils \
         libseccomp-dev libpcre2-dev \
         po4a gnat libdebuginfod-dev libjansson-dev
+    install_host_shims
+}
+
+# The parts of "make the host look enough like Arch" that apt cannot express.
+#
+# Called from install_host_deps AND from build-stage1.sh, deliberately. The
+# stand-ins are only consulted through /usr/local/bin, so editing the copy in
+# this repository changes NOTHING until it is installed -- and a stale
+# /usr/local copy is invisible: the build succeeds and ships the wrong paths.
+# Re-installing them on every stage-1 run makes the repository the source of
+# truth in fact, not just in intent. Both operations are idempotent.
+install_host_shims() {
+    log "Host shims"
+    local d="$HERE_DIR/devtools"
+    sudo install -m755 "$d/arch-meson" "$d/arch-cmake" /usr/local/bin/
 }
 
 build_pacman() {

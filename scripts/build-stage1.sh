@@ -64,6 +64,10 @@ mark()  { echo "$1" >> "$STATE"; }
 main() {
     mkdir -p "$WORK/pkg" "$REPO"
     touch "$STATE"
+    # The stand-ins are read from /usr/local/bin, so a stage-1 run that never
+    # reinstalls them silently builds with whatever was deployed weeks ago.
+    # Cheap, idempotent, and it makes this repository the source of truth.
+    install_host_shims
     local ok=0 fail=0 failed=()
     for p in "${STAGE1_PACKAGES[@]}"; do
         if built "$p"; then
