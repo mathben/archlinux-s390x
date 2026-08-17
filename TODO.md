@@ -79,6 +79,50 @@ generated patches are skipped.
 
 **To close:** build `archlinux-keyring`, then verify.
 
+### PDF manuals in pam — `patches/pkgbuild/pam.sh`
+
+Arch lists `fop` in makedepends, a Java renderer, to produce three PDFs that
+the very next line of `package()` deletes as unreproducible. A JVM on the
+build host buys nothing, so without it meson drops the PDF targets silently
+and the `rm` is handed an unexpanded glob. The hook makes it `rm -f`.
+
+**To close:** nothing needs closing. Listed because the hook's `-f` would
+otherwise look like it is papering over a real absence.
+
+### `libalpm.so` has no version — `/etc/makepkg.conf`
+
+Every package in the repository declares bare sonames — `provides =
+libalpm.so`, not `libalpm.so=16-64` — because `OPTIONS` carries `!autodeps`,
+which is makepkg's own default. The soname scan never runs for any package.
+Verified across all seventy.
+
+Harmless today: our `depends` are equally unversioned, so the repository is
+internally consistent and pacman resolves it. It breaks the moment anything
+wants a versioned soname, as Arch's own packages do.
+
+**To close:** enable `autodeps` and rebuild, or accept the divergence
+knowingly. Not urgent, but it is a real difference from Arch's repository.
+
+### `makedb` still links libselinux — no hook, deliberately
+
+`glibc`'s `usr/bin/makedb` is the last binary in the repository carrying a
+host artefact. It is the only one left of the six the audit found.
+
+It is NOT hooked on purpose: nothing in the bootstrap runs `makedb`, and
+rebuilding glibc for it would relink the foundation under every other
+package.
+
+**To close:** stage 2 rebuilds glibc in a chroot that has no libselinux, and
+it closes itself.
+
+### The python module brotli builds is unusable on the target — `patches/pkgbuild/brotli.sh`
+
+The wheel is built by the host's python 3.13 and is ABI-tagged
+`cpython-313`; Arch ships 3.14. No destination makes it importable. The hook
+only moves it out of `/usr/local`, which an Arch package may not ship.
+
+**To close:** stage 2 builds it with the port's own python.
+
 ---
 
 ## Architectural
@@ -92,10 +136,72 @@ why.
 | gold linker | `binutils.sh` | x86-centric, deprecated upstream since 2.44; `ld.bfd` is the linker on Z |
 | 32-bit multilib | `glibc.sh`, `gcc.sh`, `libtool.sh` | On x86_64 it means i686. On Z it means the 31-bit ESA/390 ABI that GCC is removing |
 | `libhwasan` | `gcc.sh` | Hardware-assisted ASan exists on x86_64 and aarch64 only |
+| systemd-boot | `systemd.sh` | `meson.build:1627` maps a cpu family to an EFI machine type and s390x is not in the table. Z boots from an IPL record; there is no ESP to write into. `bootctl` is still built |
+
+---
+
+## The host decides what gets built
+
+A category the first three did not cover, and the one that cost this round
+the most. These are not choices anyone made. A build option's DEFAULT is
+computed from the build machine, so installing an unrelated Ubuntu package
+changes what a PKGBUILD produces — usually without failing, sometimes weeks
+later.
+
+Four were found, all in one round, all now pinned:
+
+| Option | Where | What the host decides |
+|---|---|---|
+| `libdir` | `scripts/devtools/arch-meson` | meson asks `dpkg-architecture` and answers `lib/s390x-linux-gnu`. Five packages shipped their libraries where Arch's `ld.so` never looks |
+| `python.platlibdir` | `scripts/devtools/arch-meson` | meson's python module uses Debian's `deb_system` scheme, `/usr/lib/python3/dist-packages` |
+| `EXPAT_BUILD_DOCS` | `expat.sh` | ON if any of four docbook converters is on `PATH`. `asciidoc` pulled in `docbook-utils` as an automatic dependency, and expat — which had built clean the day before — started failing 29 hours later |
+| `split-bin` | `systemd.sh` | probes whether the BUILD machine's `/usr/sbin` is a symlink. Ubuntu's is a real directory, so six binaries went to `/usr/sbin` and `package()` could not find them |
+
+The general lesson: `arch-meson` passes `--auto-features enabled`, which
+promotes every `auto` feature to a hard requirement. Installing a tool
+therefore switches on code that has never compiled in this port. `util-linux`
+was the clearest case — `asciidoctor` was needed for its man3 pages, and its
+arrival enabled a translation step that had never once run.
+
+**To close:** stage 2 builds inside an Arch root, where every one of these
+defaults is already the right one. Until then, pin rather than hope.
 
 ---
 
 ## Environment, not the port
+
+### Build locale — `scripts/bootstrap-pacman.sh`
+
+`LC_ALL=C.UTF-8` on the `makepkg` line. This host runs `fr_FR.UTF-8`, and
+util-linux's `poman-translate.sh` greps po4a's output for the English word
+`Discard`. In French po4a says `Rejet de …`, so the skip list came out empty
+and the build was handed 852 files po4a had never written.
+
+`C.UTF-8` and not `C`: the Arabic and Ukrainian pages must stay valid UTF-8.
+Arch's build chroot runs in this locale, so this is parity, not a workaround.
+
+### `history.pc` — `scripts/bootstrap-pacman.sh`
+
+GNU readline installs both `readline.pc` and `history.pc`; Debian and Ubuntu
+keep the first and drop the second, while `libhistory.so` ships in
+`libreadline-dev` regardless. libxml2 asks pkg-config for `history` and stops.
+
+Our own readline package ships a correct `history.pc` — and copying it would
+be wrong. Its `libdir` names `/usr/lib`, which on a multiarch host holds no
+`libhistory`. The file has to describe the BUILD host, so it is generated.
+
+### gnupg's feature set moved on its own — no hook
+
+`libtss2-dev` was installed for systemd. gnupg's configure found it, turned
+`TPM: no` into `TPM: yes`, and shipped `usr/lib/gnupg/tpm2daemon` — code that
+had never compiled here. It built cleanly, and Arch's gnupg depends on
+`tpm2-tss` too, so this is parity rather than drift.
+
+Recorded because nobody decided it. It is the same mechanism as the table
+above, caught on the way past.
+
+**To close:** nothing. Noted so the next unexplained gnupg change has a
+precedent to read.
 
 ### libassuan source — `patches/pkgbuild/libassuan.sh`
 
