@@ -205,6 +205,26 @@ configure_makepkg() {
 build_package() {
     local name="$1"
     log "Building $name"
+    # Free space, checked before the build rather than discovered inside it.
+    #
+    # A full disk does not say so. gcc's stage-2 bootstrap reported
+    #
+    #   genattrtab: cannot close file tmp-attrtab.cc: No space left on device
+    #
+    # seventeen thousand lines into its log, behind two hundred lines of make
+    # recursion -- and the first grep for "error:" matched cpp_error(), a
+    # function name in gcc's own source. Every symptom pointed at gcc.
+    #
+    # This host is shared with running VMs whose disk images grow, so the
+    # margin is not stable and cannot be assumed. 8 GiB clears gcc, the
+    # largest build here; a smaller package will simply never trip it.
+    local free_mb
+    free_mb=$(df -Pm "$WORK" | awk 'NR==2 {print $4}')
+    if [ "${free_mb:-0}" -lt 8192 ]; then
+        echo "only ${free_mb} MiB free under $WORK; need 8192" >&2
+        echo "reclaim with: rm -rf $WORK/pkg/*/src   (makepkg -C re-extracts)" >&2
+        return 1
+    fi
     mkdir -p "$WORK/pkg"
     # Both guards are load-bearing, and their absence cost a whole run.
     #
