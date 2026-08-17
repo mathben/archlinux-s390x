@@ -46,6 +46,14 @@ STAGE1_PACKAGES=(
     # System skeleton: without these a rootfs has no /etc/passwd, no zones,
     # no /etc/services -- and nothing boots to a usable shell.
     filesystem iana-etc tzdata licenses shadow util-linux
+    # Named by the chroot test, not guessed. Installing the repo into a
+    # rootfs and entering it turned "does it work?" into a precise list:
+    #   - coreutils links against libselinux, and would not start without it
+    #   - libcap needs pam; openssl needs brotli; libarchive needs libxml2
+    #   - pacman itself asks for systemd, pacman-mirrorlist and
+    #     libmakepkg-dropins
+    # Sixty-eight successful builds proved none of this. One chroot did.
+    libselinux pam brotli libxml2 systemd pacman-mirrorlist libmakepkg-dropins
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
