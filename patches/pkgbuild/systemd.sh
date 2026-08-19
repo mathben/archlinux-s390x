@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# systemd: two build options Arch can hold and s390x cannot.
+# systemd: four defaults Arch can hold and s390x cannot.
 #
-# Neither is a missing host package -- both are hard errors raised by meson
-# because the PKGBUILD ASKS for something that does not exist on this
-# architecture, so no amount of apt-get makes them go away. The libraries
-# systemd wants (libbpf, clang, libfdisk, libkmod, ...) ARE host packages and
-# belong in install_host_deps, not here.
+# None of them is a missing host package. Two are hard errors raised by meson
+# because the PKGBUILD ASKS for something this architecture does not have; two
+# are defaults computed from the BUILD MACHINE rather than the target. No
+# amount of apt-get fixes any of them. The libraries systemd wants (libbpf,
+# clang, libfdisk, libkmod, ...) ARE host packages and belong in
+# install_host_deps, not here.
+#
+# Three of the four fail with a message that names something else entirely.
+# Each section says which, because that is the part worth reading twice.
 set -euo pipefail
 
 # 1. -Dbootloader=enabled: systemd-boot is EFI, and s390x has no EFI.
@@ -126,3 +130,110 @@ sed -i 's/^\( *\)-Dcompat-sysv-interfaces=false/\1-Dsplit-bin=false\n\1-Dcompat-
 grep -q -- '-Dsplit-bin=false' PKGBUILD || {
     echo "systemd: split-bin still auto (would install into /usr/sbin)" >&2; exit 1; }
 echo "systemd: split-bin=false (Ubuntu's /usr/sbin is not Arch's)"
+
+# 4. -Dukify=auto: the tool cannot run on this architecture at all.
+#
+# ukify assembles a Unified Kernel Image, and a UKI is a PE binary -- ukify.py
+# imports pefile at module level and drives it directly (pefile.PE,
+# SectionStructure, IMAGE_SCN_*). It is EFI tooling, so the same reasoning as
+# section 1 applies. But it is stronger than "pointless on Z", and the source
+# says so out loud:
+#
+#   EFI_ARCH_MAP = {
+#       'x86_64': ['x64','ia32'], 'i[3456]86': ['ia32'], 'aarch64': ['aa64'],
+#       'armv[45678]*l': ['arm'], 'loongarch32': ..., 'riscv64': ...
+#   }
+#
+#   def guess_efi_arch() -> str:
+#       ...
+#       else:
+#           raise ValueError(f'Unsupported architecture {arch}')
+#
+# s390x is not in that table, so ukify RAISES on this machine. Shipping it
+# would put a program in the repository that cannot start.
+#
+# THE TRAP is that ukify does not announce itself as EFI-only anywhere the
+# build stops. meson_options.txt:560 declares it a plain feature with no
+# value -- 'auto' -- and meson.build:1659 is get_option('ukify').allowed(),
+# which is true for 'auto'. So it is on by default, and what it broke was
+# nowhere near ukify:
+#
+#   FAILED: src/boot/test-hwids-section.c
+#   ModuleNotFoundError: No module named 'pefile'
+#
+# That looked like a missing host package, and `apt install python3-pefile`
+# made it build. It was the wrong fix: the target at src/boot/meson.build:31
+# is gated on ENABLE_UKIFY, not on ENABLE_BOOTLOADER, which is why disabling
+# systemd-boot did not reach it. Disabling ukify does, and python3-pefile is
+# then unnecessary -- nothing else in the tree needs it, since the only other
+# importer, tools/check-efi-alignment.py, is reached from
+# src/boot/meson.build:495, far below the ENABLE_BOOTLOADER subdir_done()
+# guard.
+#
+# systemd-tests goes with it, for a different reason. It is a test suite --
+# stage 1 runs --nocheck -- and it is the sole reason five python packages
+# (colorama, packaging, pexpect, psutil, pytest) would enter the closure.
+# Deferred, not architectural: TODO.md records it.
+#
+# The two subpackages leave in three places, and the pkgname array is the
+# awkward one: its LAST entry carries the closing paren, so deleting a line
+# would delete the ')' with it. The array is rebuilt rather than edited.
+python3 - <<'PY'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+
+# (a) the option, next to the other EFI one so they read together
+anchor = "    -Dbootloader=disabled\n"
+assert s.count(anchor) == 1, "expected section 1 to have set bootloader=disabled"
+s = s.replace(anchor, anchor + "    -Dukify=disabled\n", 1)
+
+# (b) the pkgname array, rebuilt to keep its syntax intact
+m = re.search(r"pkgname=\((.*?)\)\n", s, re.S)
+assert m, "pkgname array not found"
+names = re.findall(r"'([^']+)'", m.group(1))
+drop = {"systemd-ukify", "systemd-tests"}
+assert drop <= set(names), "expected both subpackages in pkgname, found %s" % names
+kept = [n for n in names if n not in drop]
+s = s[:m.start()] + "pkgname=(" + ("\n" + " " * 9).join("'%s'" % n for n in kept) + ")\n" + s[m.end():]
+
+# (c) package_systemd() moves four ukify paths out. With ukify disabled none
+#     of them exists, and mv fails -- after a successful compile, which is the
+#     expensive way to find out.
+blk = re.search(
+    r"\n  # ukify shipped in separate package\n"
+    r"(?:.*\n)*?"
+    r"  mv \"\$pkgdir\"/usr/lib/kernel/install\.d/60-ukify\.install systemd-ukify/install\.d\n",
+    s)
+assert blk, "ukify mv block not found"
+s = s[:blk.start()] + "\n" + s[blk.end():]
+
+# (d) an optdepends on a package we no longer produce
+s = re.sub(r"^.*'systemd-ukify: .*\n", "", s, flags=re.M)
+
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+PY
+# The guard checks what MATTERS, which is not "no mention of ukify remains".
+# package_systemd-ukify() still sits in the file and still names four paths --
+# harmless, because makepkg never calls a function whose name is absent from
+# pkgname, exactly as with package_libquadmath() in gcc.sh. Counting mentions
+# instead of checking the two real conditions made this hook exit 1 on a
+# correctly patched PKGBUILD, and build_package reads that as a failed
+# package: systemd would have been skipped entirely, with every edit applied.
+grep -q -- '-Dukify=disabled' PKGBUILD || {
+    echo "systemd: ukify still enabled" >&2; exit 1; }
+grep -q '# ukify shipped in separate package' PKGBUILD && {
+    echo "systemd: package_systemd() still moves ukify paths that cannot exist" >&2
+    exit 1; }
+python3 - <<'PYGUARD'
+import io, re, sys
+s = io.open("PKGBUILD", encoding="utf-8").read()
+m = re.search(r"pkgname=\((.*?)\)\n", s, re.S)
+if not m:
+    sys.exit("systemd: pkgname array unreadable after patching")
+names = re.findall(r"'([^']+)'", m.group(1))
+left = sorted({"systemd-ukify", "systemd-tests"} & set(names))
+if left:
+    sys.exit("systemd: still declared in pkgname: %s" % left)
+print("systemd: pkgname -> %s" % " ".join(names))
+PYGUARD
+echo "systemd: ukify disabled (guess_efi_arch raises on s390x), tests dropped"

@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# brotli: two Debian defaults, and both of them ship silently.
+# brotli: a Debian default that ships silently, and a sub-package that costs
+# more than it is worth.
 #
-# Neither produces an error. makepkg exits 0 both times and the repository
-# gains a package whose files are in places nothing on the target will look.
-# This is the case "an exit code proves nothing, only the artefact proves"
-# was written for -- the symptom arrives months later, far from the cause.
+# The first produces no error. makepkg exits 0 and the repository gains a
+# package whose library sits where nothing on the target will look -- the case
+# "an exit code proves nothing, only the artefact proves" was written for,
+# where the symptom arrives months later, far from the cause.
+#
+# The second is a closure decision, not a defect, and it is measured rather
+# than argued.
 set -euo pipefail
 
 # 1. The C library, and the one that actually matters.
@@ -34,52 +38,40 @@ grep -q 'DCMAKE_INSTALL_LIBDIR=lib' PKGBUILD || {
     echo "brotli: libdir not pinned" >&2; exit 1; }
 echo "brotli: cmake libdir pinned to lib (host GNUInstallDirs says multiarch)"
 
-# 2. The python wheel, and an honest account of what this buys.
+# 2. python-brotli: dropped, because it costs the entire python closure.
 #
-# package_python-brotli() runs
+# THE MEASUREMENT THAT DECIDED IT. pacman resolver named 70 missing
+# dependencies. Excluding this one sub-package from the ledger took that to
+# 47 and removed `python` outright -- with libffi, mpdecimal and gdbm behind
+# it. Three packages of closure, for one module.
 #
-#   python -m installer --destdir="$pkgdir" dist/*.whl
+# And the module could not work anyway. The wheel is built by the host python
+# 3.13 and is ABI-tagged cpython-313; Arch ships 3.14. No destination makes it
+# importable on the target, so stage 2 is what has to produce a real one.
+# TODO.md carries that entry already.
 #
-# and `installer` asks sysconfig where a wheel belongs. Debian and Ubuntu
-# patch sysconfig to prefer the "posix_local" scheme, so the answer here is
-# /usr/local/lib/python3.13/dist-packages. Verified by running the real wheel
-# through the real installer into a scratch pkgdir.
+# Note what is NOT the reason. The wheel also lands in
+# /usr/local/lib/python3.13/dist-packages, because Debian patches sysconfig to
+# prefer its posix_local scheme, and an Arch package may not ship /usr/local.
+# That was worth a relocation while the sub-package existed; with the
+# sub-package gone there is nothing to relocate, and keeping the relocation
+# would be editing a package() function makepkg never calls.
 #
-# BE CLEAR ABOUT WHAT THIS FIXES. It does NOT make the module importable on
-# Arch. Arch ships python 3.14 and this wheel is cp313 with an ABI-tagged
-# _brotli.cpython-313-*.so, so no destination makes a stage-1 wheel work on
-# the target; stage 2 is what produces a usable one. What the move buys is
-# that an Arch package must not ship files under /usr/local, which Arch
-# reserves for the administrator. That is the whole justification, and
-# writing a bigger one here would mislead the next reader.
+# build() still builds the wheel -- it is one function for all three
+# sub-packages -- and the result is simply not packaged. Cheap, and it keeps
+# this hook to one line of real change.
 #
-# `installer --prefix=/usr` does NOT help: posix_local is literally
-# "{base}/local/lib/pythonX.Y/dist-packages", so overriding base with /usr
-# still lands in /usr/local. The SCHEME would have to change, and the only
-# supported way to change it is to be a different interpreter.
-#
-# Guarded on the directory, not the host name: under an Arch python the
-# directory is absent and the block does nothing. Only purelib moves -- the
-# wheel declares py_modules=["brotli"] plus the extension, no scripts and no
-# data files, so nothing else of it ever leaves /usr/local.
-python3 - <<'PY'
+# brotli-testdata stays: nothing depends on it, it costs no closure, and
+# removing it would be churn.
+python3 - <<'PYB'
 import io
 s = io.open("PKGBUILD", encoding="utf-8").read()
-old = '  python -m installer --destdir="$pkgdir" dist/*.whl\n'
-assert old in s, "installer invocation not found"
-new = old + """  # Ubuntu's python installs to /usr/local/lib/pythonX.Y/dist-packages
-  # (sysconfig's posix_local scheme). An Arch package may not ship /usr/local.
-  local _pyver=$(python -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-  if [ -d "$pkgdir/usr/local/lib/python$_pyver/dist-packages" ]; then
-    install -dm 755 "$pkgdir/usr/lib/python$_pyver"
-    mv "$pkgdir/usr/local/lib/python$_pyver/dist-packages" \\
-       "$pkgdir/usr/lib/python$_pyver/site-packages"
-    rm -rf "$pkgdir/usr/local"
-  fi
-"""
-s = s.replace(old, new, 1)
+old = "pkgname=('brotli' 'python-brotli' 'brotli-testdata')"
+assert s.count(old) == 1, "brotli: expected exactly one pkgname line"
+s = s.replace(old, "pkgname=('brotli' 'brotli-testdata')", 1)
 io.open("PKGBUILD", "w", encoding="utf-8").write(s)
-PY
-grep -q "posix_local scheme" PKGBUILD || {
-    echo "brotli: wheel relocation not inserted" >&2; exit 1; }
-echo "brotli: python wheel moved out of /usr/local"
+PYB
+grep -q "^pkgname=('brotli' 'brotli-testdata')$" PKGBUILD || {
+    echo "brotli: python-brotli not removed from pkgname" >&2; exit 1; }
+grep -q "python-brotli" PKGBUILD &&     echo "brotli: python-brotli remains only in its own package function (never called)"
+echo "brotli: python-brotli dropped (pulled the whole python closure)"
