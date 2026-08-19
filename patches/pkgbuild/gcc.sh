@@ -259,6 +259,20 @@ grep -A1 '^build() {' PKGBUILD | head -2 | sed 's/^/  /'
 # is not depended on, and the check below asserts it rather than trusting it.
 # Adding a name to that set is now enough, in one place.
 #
+# libisl.so is in the same list for a DIFFERENT reason, and the difference is
+# worth a sentence. The others are components this PKGBUILD stops building.
+# isl is an outside library that gcc simply never linked: the host has no isl,
+# so configure recorded ISLLIBS='' and ISLINC='', and the artefact agrees --
+#
+#   $ readelf -d usr/bin/gcc usr/lib/libgcc_s.so.1 | grep -c libisl
+#   0
+#
+# The remedy is the same, so the list is the same. Building isl instead was
+# the first plan and it does not work: the Arch packaging repo for isl was
+# last touched in 2017 and its only source URL is isl.gforge.inria.fr, which
+# died with INRIA's GForge. What this costs is Graphite -- the -floop-*
+# optimisations -- and TODO.md records it.
+#
 # Both spellings occur: a bare name in a sub-package's depends, and the
 # versioned "libhwasan=$pkgver-$pkgrel" form in gcc's own. The unused
 # package_libhwasan() function can stay -- makepkg never calls a function
@@ -266,7 +280,10 @@ grep -A1 '^build() {' PKGBUILD | head -2 | sed 's/^/  /'
 python3 - <<'PY'
 import io, re
 drop = ["libhwasan", "libquadmath", "lib32-gcc-libs",
-        "libgm2", "libgo", "libgphobos", "libgcobol"]
+        "libgm2", "libgo", "libgphobos", "libgcobol",
+        # Not a component we dropped -- an EXTERNAL library gcc was never
+        # configured against. See the note above the list.
+        "libisl.so"]
 s = io.open("PKGBUILD", encoding="utf-8").read()
 
 def prune(block):
