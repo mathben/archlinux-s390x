@@ -93,6 +93,54 @@ STAGE1_PACKAGES=(
     icu jansson kbd kmod krb5 libcap-ng libgcrypt libidn2 libksba
     libmpc libnsl libseccomp libssh2 libtirpc libunistring libusb libxcrypt
     nettle npth openldap pambase pcre2 perl pinentry sqlite tpm2-tss
+    # Closure, second round. The first thirty-five pulled these in, exactly as
+    # the comment above predicted, and the resolver named them just as
+    # precisely.
+    #
+    # THE MEASUREMENT THAT MATTERS HERE IS THE ONE THAT CHANGED ITS ANSWER.
+    # Four of these were going to be avoided by dropping a sub-package --
+    # sqlite-tcl, sqlite-analyzer, the openldap server, debuginfod -- on the
+    # reasoning that had removed python-brotli earlier. Measured instead of
+    # assumed, tcl, unixodbc and libmicrohttpd each cost ZERO new packages:
+    # the closure had filled in around them. Building them is cheaper than
+    # four hooks, and it does not leave sqlite shipping an sqltclsh that
+    # cannot start.
+    #
+    # python still costs three (libffi, mpdecimal, gdbm) and is still avoided
+    # -- but for the ABI reason, not the cost one: python-audit and
+    # python-capng are cp313 wheels and Arch ships 3.14. Their hooks say so.
+    #
+    db5.3 gdbm e2fsprogs gnulib-l10n json-c keyutils p11-kit libsasl
+    libsodium libtasn1 libverto lmdb popt lvm2 tcl unixodbc libmicrohttpd
+    # ca-certificates-mozilla, which is the only thing here that is not a
+    # library. It is the LIST OF ROOT CERTIFICATES -- ca-certificates itself
+    # is only the trust machinery around it, so without this the target has a
+    # trust store containing nothing, and every HTTPS verification fails.
+    # curl declares ca-certificates, and pacman fetches through curl.
+    #
+    # It has no packaging repo of its own: the clone 404s, which
+    # gitlab.archlinux.org reports by asking for a login -- the same
+    # misleading shape that made libselinux look like a network problem. nss
+    # produces it as a sub-package, so nss is what gets built, and nspr comes
+    # with it.
+    #
+    # Measured before committing to it rather than estimated: nspr costs
+    # nothing new, nss needs only nspr plus mercurial on the host, and
+    # hg.mozilla.org answers from this build host (HTTP 302 in 0.3s -- worth
+    # checking, since dev.gnupg.org does not answer at all and libassuan
+    # needed a source change because of it).
+    nspr nss
+    # Closure, third round, and it is two packages. Both were pulled in by
+    # what the second round added, and both cost nothing further: libffi by
+    # libp11-kit, libevent by libverto.
+    #
+    # They are worth a line because of what they unblocked. p11-kit builds
+    # into three packages, and libp11-kit's dependency on libffi was holding
+    # up the whole chain ca-certificates -> ca-certificates-utils -> p11-kit
+    # -> libp11-kit. The resolver reported it as "ca-certificates required by
+    # curl" -- four links away from the missing name, and nothing in that
+    # message points at libffi.
+    libffi libevent
     # And finally the package manager itself, built as an Arch package.
     pacman
 )

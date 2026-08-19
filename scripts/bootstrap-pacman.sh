@@ -90,6 +90,30 @@ install_host_deps() {
     # qhelpgenerator -- and the third needs Qt, so the chain had no end. Its
     # doc features are pinned off in a hook instead. A single missing library
     # is a host dep; a queue of them is a feature that should be disabled.
+    #
+    # The closure's second round wanted three more, and each named a program
+    # rather than a library: asn1Parser by p11-kit (libtasn1-bin -- we build
+    # the libtasn1 PACKAGE, but the host needs the TOOL), libevent by
+    # libverto, libaio by lvm2.
+    #
+    # libsasl asked for a fourth and did not get it. Its error said
+    # "libpq-fe.h: No such file or directory" while the header sat in
+    # /usr/include/postgresql, and mysql.h sat in /usr/include/mariadb -- two
+    # files that exist, on paths configure does not try. By the rule above,
+    # that is a queue, so the SQL auxprop plugin is disabled in a hook
+    # instead. Arch declares depends=(glibc) for libsasl and says why: the
+    # plugins are dlopened, so nothing is lost.
+    #
+    # mercurial is for nss, whose only source is an hg clone of Mozilla's NSS
+    # repository. gyp, perl and python were already here.
+    #
+    # libnspr4-dev is nss's other half: its build hardcodes -I/usr/include/nspr
+    # and stops on `plarena.h: No such file or directory`. We DO build an nspr
+    # package -- 4.40, newer than the host's 4.36 -- but this is an ABSENCE on
+    # the host, not an age, so the ordinary stage-1 rule applies and the host
+    # package is the answer. The libgcrypt hook exists precisely because that
+    # rule did not apply there: 1.51 against a floor of 1.56 cannot be fixed
+    # by installing anything.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -114,7 +138,8 @@ install_host_deps() {
         libcryptsetup-dev libgcrypt20-dev libgnutls28-dev libpam0g-dev \
         libpopt-dev scdoc libgpg-error-dev cython3 tcl-dev libsodium-dev \
         autoconf-archive ducktype \
-        yelp-tools liblmdb-dev libcmocka-dev libverto-dev uthash-dev
+        yelp-tools liblmdb-dev libcmocka-dev libverto-dev uthash-dev \
+        libtasn1-bin libevent-dev libaio-dev mercurial libnspr4-dev
     install_host_shims
 }
 
