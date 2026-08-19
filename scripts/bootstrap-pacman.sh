@@ -119,6 +119,36 @@ install_host_deps() {
     # stage 1 only because STAGE 2 needs it: 51 of the 159 PKGBUILDs take their
     # sources from git+https, and makepkg validates that clone even under
     # --noextract. Nothing in the repository depends on git.
+    #
+    # libmpdec-dev is python's, and it is not optional: Python 3.13 removed the
+    # vendored libmpdec, so --with-system-libmpdec is the only way to build and
+    # it needs the system headers. Without them the failure is
+    #
+    #   No rule to make target 'Modules/_decimal/libmpdec/basearith.h'
+    #
+    # nine hundred lines into a PGO build -- a missing header reported as a
+    # missing make rule for a file that used to be vendored.
+    #
+    # The last line is the meson/cmake round, and every entry is a tool those
+    # two need to describe themselves: setuptools-scm and yaml for meson's own
+    # build, sphinx for libuv's docs, rhash and nlohmann-json for cmake and
+    # cppdap. Note what they are NOT: none is a dependency of the software
+    # being ported. They are the cost of the build system, which is why the
+    # dependency resolver never mentioned one of them.
+    #
+    # strictyaml, not yaml: meson's docs/meson.build asks for the module by
+    # name and PyYAML does not answer to it. `python3-yaml` was installed
+    # first, the error did not move, and only makedepends said which one --
+    # `python-strictyaml`. Reading the PKGBUILD would have been quicker than
+    # reading the error.
+    #
+    # cmake asked for four of these one at a time -- rhash, then jsoncpp, then
+    # cppdap -- because its bootstrap prefers a system copy of everything it
+    # bundles. That is a queue, and the rule says a queue is a feature to
+    # disable. It is not applied here for once, and deliberately: each one
+    # exists as an Ubuntu -dev package, so the queue terminates. The rule is
+    # about queues with no end, like dbus asking for a third documentation
+    # tool that needed Qt.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -145,7 +175,10 @@ install_host_deps() {
         autoconf-archive ducktype \
         yelp-tools liblmdb-dev libcmocka-dev libverto-dev uthash-dev \
         libtasn1-bin libevent-dev libaio-dev mercurial libnspr4-dev \
-        libglib2.0-dev libsecret-1-dev
+        libglib2.0-dev libsecret-1-dev libmpdec-dev \
+        python3-setuptools-scm python3-yaml python3-sphinx \
+        librhash-dev nlohmann-json3-dev python3-strictyaml libjsoncpp-dev \
+        libcppdap-dev
     install_host_shims
 }
 

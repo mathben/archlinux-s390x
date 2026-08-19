@@ -69,6 +69,10 @@ CHROOT_PKGS=(
     # git: 51 PKGBUILDs use git sources, and makepkg validates the clone even
     # under --noextract.
     git
+    # meson and cmake, with the python they are written in. Ten PKGBUILDs
+    # call arch-meson and four call cmake, so without these stage 2 could
+    # rebuild most of the repository and then stop.
+    python meson ninja cmake
 )
 
 log()  { printf '\n== %s ==\n' "$*"; }
