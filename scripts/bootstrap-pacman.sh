@@ -246,7 +246,28 @@ configure_makepkg() {
     #
     # while the build had created s390x-ibm-linux-gnu/libstdc++-v3/doc.
     sudo sed -i 's|^CHOST=.*|CHOST="s390x-ibm-linux-gnu"|' /etc/makepkg.conf
-    grep -E '^(CARCH|CHOST|MAKEFLAGS)=' /etc/makepkg.conf
+    # OPTIONS, aligned with Arch's own defaults.
+    #
+    # This host was configured with `libtool staticlibs`, which KEEPS the .la
+    # files and the .a archives that Arch strips. Fifty-six of a hundred and
+    # fifty-nine packages carried .la files as a result -- a third of the
+    # repository diverging from Arch in a way nothing reported, until two
+    # sub-packages of the same source both claimed one:
+    #
+    #   error: failed to commit transaction (conflicting files)
+    #   /usr/lib/libcrypt.la exists in both 'libxcrypt' and 'libxcrypt-compat'
+    #
+    # That is what .la files are for: they record a link line, so two packages
+    # splitting one library both want to describe it. Arch removes them
+    # because nothing in a modern toolchain reads them and the paths they
+    # record are wrong the moment a package is relocated.
+    #
+    # debug and lto stay OFF, unlike Arch: debug wants a source-package
+    # pipeline this bootstrap has no use for, and lto doubles compile time on
+    # a stage whose output stage 2 discards anyway. autodeps stays off because
+    # it is makepkg's own default; TODO.md records what that costs.
+    sudo sed -i 's|^OPTIONS=.*|OPTIONS=(strip docs !libtool !staticlibs emptydirs zipman purge !debug !lto !autodeps)|' /etc/makepkg.conf
+    grep -E '^(CARCH|CHOST|MAKEFLAGS|OPTIONS)=' /etc/makepkg.conf
 }
 
 # build_package <name> -- fetch the official PKGBUILD and build it for s390x.
