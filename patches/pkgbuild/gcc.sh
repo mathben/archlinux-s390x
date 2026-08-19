@@ -311,3 +311,93 @@ for m in re.finditer(r"depends=\(([^)]*)\)", s):
 assert not left, "gcc: dropped names still depended on: %s" % sorted(set(left))
 print("gcc: depends pruned of %d dropped components" % len(drop))
 PY
+
+# --with-ld / --with-as: our gcc looked for a Debian-named linker.
+#
+# Found only by building a chroot from stage 1 and trying to compile in it:
+#
+#   collect2: fatal error: cannot find 'ld'
+#
+# THE MESSAGE NAMES THE WRONG FILE. /usr/bin/ld was present and executable,
+# ld --version ran as the same user, and PATH contained /usr/bin. strace
+# settled it in one line:
+#
+#   newfstatat("/usr/bin/s390x-linux-gnu-ld") = ENOENT
+#
+# collect2 was not looking for `ld`. It was looking for
+# `s390x-linux-gnu-ld` -- the DEBIAN triplet -- and printing the generic name
+# in its error. gcc -dumpmachine says s390x-ibm-linux-gnu, so the prefix is
+# not the target either; it is what gcc's configure recorded after finding
+# Ubuntu's /usr/bin/s390x-linux-gnu-ld, which that host ships and no Arch
+# system ever will.
+#
+# THE REASON STAGE 1 NEVER NOTICED is that every stage-1 build ran on the
+# host, where that file exists. The defect was in the shipped compiler all
+# along and only a chroot could see it -- the same lesson as the missing
+# dynamic linker, one layer up: sixty-eight successful builds proved nothing
+# about whether the compiler works anywhere else.
+#
+# Absolute paths rather than the canonical triplet, because they are correct
+# in BOTH places: /usr/bin/ld is Ubuntu's during stage 1 and ours in the
+# chroot and on the target. A triplet-prefixed symlink would have papered
+# over it and shipped a gcc that still needs a Debian-named tool.
+python3 - <<'PY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+assert "--with-ld=" not in s, "gcc: linker already pinned, hook ran twice"
+# _confflags is an ARRAY, shared by both configure passes -- the compiler and
+# libgccjit -- so one insertion covers both, and no line-continuation
+# backslash belongs on the new entries.
+anchor = "      --with-linker-hash-style=gnu\n"
+n = s.count(anchor)
+assert n == 1, "gcc: expected one --with-linker-hash-style in _confflags, found %d" % n
+s = s.replace(anchor, anchor + "      --with-ld=/usr/bin/ld\n      --with-as=/usr/bin/as\n", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+print("gcc: ld and as pinned to absolute paths")
+PY
+grep -q -- '--with-ld=/usr/bin/ld' PKGBUILD || {
+    echo "gcc: --with-ld not inserted" >&2; exit 1; }
+
+# libgcc_s.so: the PKGBUILD moves a RELATIVE symlink into a deeper directory.
+#
+#   /usr/bin/ld: cannot find -lgcc_s: No such file or directory
+#
+# package_gcc() does, at the end:
+#
+#   mv -v usr/lib/libgcc_s{,_asneeded}.so $_libdir/
+#
+# where $_libdir is /usr/lib/gcc/<triplet>/16. The two files are not alike.
+# libgcc_s_asneeded.so is a linker SCRIPT -- `INPUT ( AS_NEEDED ( -lgcc_s ) )`
+# -- so it survives being moved anywhere. libgcc_s.so is a SYMLINK whose
+# target is the bare name `libgcc_s.so.1`, i.e. the same directory. That was
+# true in /usr/lib, where libgcc_s.so.1 lives; three directories deeper it
+# points at nothing.
+#
+# So -lgcc_s cannot resolve: the only libgcc_s.so on the system is a dangling
+# link, and the asneeded script that ld reads instead asks for -lgcc_s again.
+# Nothing links, including the trivial `int main(void){return 0;}`.
+#
+# WHY NOTHING CAUGHT THIS EARLIER, and it is the same reason as the linker
+# lookup above: stage 1 compiles with UBUNTU's gcc. Our gcc package was built
+# a dozen times and never once used to compile anything. The first program it
+# was ever asked to link was in the stage-2 chroot.
+#
+# The link is repointed rather than the mv removed, because $_libdir is where
+# gcc's own search path expects it -- that part of the PKGBUILD is right.
+# Three levels up from /usr/lib/gcc/<triplet>/16 is /usr/lib.
+python3 - <<'PY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = '    mv -v usr/lib/libgcc_s{,_asneeded}.so $_libdir/\n'
+assert s.count(old) == 1, "gcc: libgcc_s move not in the expected form"
+fix = old + (
+    '    # The moved symlink named its target relative to /usr/lib; from\n'
+    '    # $_libdir that resolves to nothing. Repoint it, or -lgcc_s cannot\n'
+    '    # be satisfied and the compiler links nothing at all.\n'
+    '    ln -sfv ../../../libgcc_s.so.1 $_libdir/libgcc_s.so\n')
+s = s.replace(old, fix, 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+PY
+grep -qF 'ln -sfv ../../../libgcc_s.so.1' PKGBUILD || {
+    echo "gcc: libgcc_s.so link not repointed" >&2; exit 1; }
+echo "gcc: libgcc_s.so repointed to ../../../libgcc_s.so.1"
