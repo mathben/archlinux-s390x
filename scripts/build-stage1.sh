@@ -183,9 +183,83 @@ STAGE1_PACKAGES=(
     # rather than from my own tool, which had reported `zsh` as a dependency
     # of git. It is not; the tool's regex was catching a neighbouring array.
     perl-error perl-timedate perl-mailtools zlib-ng git
+    # meson and cmake, which is where python re-enters -- and the distinction
+    # matters, because dropping python earlier was not a mistake.
+    #
+    # At stage 1 the question was what the REPOSITORY must supply: python was
+    # wanted only by python-brotli and python-libseccomp, wheels that Arch's
+    # own python could not load anyway, so they went and python went with them.
+    # Here the question is what the BUILD ENVIRONMENT must contain, and meson
+    # is written in Python. Ten of the 159 PKGBUILDs call arch-meson; four call
+    # cmake. Different question, different answer.
+    #
+    # Measured: mpdecimal, python, ninja, python-tqdm and meson, then cmake
+    # with cppdap, jsoncpp, libuv, rhash and hicolor-icon-theme behind it.
+    # Nothing further.
+    mpdecimal python ninja python-tqdm meson
+    cppdap jsoncpp libuv rhash hicolor-icon-theme cmake
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
+
+# Kill a build that has stopped producing output.
+#
+# WHY THIS EXISTS. python's PKGBUILD contains
+#
+#   while ! xvfb-run -a -n "$servernum" /bin/true 2>/dev/null; do
+#       servernum=$((servernum+1)); done
+#
+# and xvfb-run is not installed here. It exits 127, `!` inverts that to true,
+# and the loop tries the next display number. Forever -- there is no exit
+# condition for "the command does not exist", and the 2>/dev/null swallows the
+# one line that would have said so.
+#
+# Measured before anyone noticed: TEN HOURS of wall clock, four million PIDs,
+# and a log frozen at `configure: creating Makefile`. Every signal I had said
+# the build was healthy -- the process was alive, burning 40% CPU, sitting in
+# a plausible source directory. A process list cannot tell work from spinning.
+#
+# A STALLED LOG NEXT TO A LIVE makepkg CAN. That is the whole idea here.
+#
+# The threshold is deliberately generous. Real builds do go quiet: a long link,
+# a test suite that prints nothing, gcc between bootstrap stages. Forty-five
+# minutes of COMPLETE silence is not one of those, and the case this was
+# written for ran two hundred times longer. EL_STALL_MIN=0 disables it.
+#
+# `set -m` rather than setsid or a bare `&`. The whole tree has to die, because
+# makepkg forks children that outlive it -- killing the parent alone leaves
+# them spinning, which is how ten hours happened. Job control gives the
+# background job its own process group, so `kill -- -$pid` reaches all of it.
+#
+# A subshell, NOT `setsid bash -c "$(declare -f ...)"`. The first attempt here
+# re-declared build_package into a fresh shell, which loses $WORK, $REPO,
+# $PATCH_DIR and every other function it calls -- a guard that would have
+# broken the thing it was guarding.
+build_watched() {
+    local p="$1" log="$2"
+    local limit="${EL_STALL_MIN:-45}"
+    if [ "$limit" -eq 0 ]; then
+        build_package "$p" > "$log" 2>&1
+        return $?
+    fi
+    set -m
+    ( build_package "$p" ) > "$log" 2>&1 &
+    local pid=$! last=0 still=0 sz
+    set +m
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 60
+        sz=$(stat -c %s "$log" 2>/dev/null || echo 0)
+        if [ "$sz" -eq "$last" ]; then still=$((still + 1)); else still=0; fi
+        last="$sz"
+        if [ "$still" -ge "$limit" ]; then
+            printf '\n== driver: no output for %s minutes, killing ==\n' "$limit" >> "$log"
+            kill -9 -- "-$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            return 2
+        fi
+    done
+    wait "$pid"
+}
 
 built() { grep -qxF "$1" "$STATE" 2>/dev/null; }
 mark()  { echo "$1" >> "$STATE"; }
@@ -197,7 +271,7 @@ main() {
     # reinstalls them silently builds with whatever was deployed weeks ago.
     # Cheap, idempotent, and it makes this repository the source of truth.
     install_host_shims
-    local ok=0 fail=0 failed=()
+    local ok=0 fail=0 rc=0 failed=()
     for p in "${STAGE1_PACKAGES[@]}"; do
         if built "$p"; then
             echo "== $p already built, skipping =="
@@ -205,12 +279,17 @@ main() {
         fi
         # A failure must not stop the run: one missing package should not hide
         # the state of the forty that follow. They are collected and reported.
-        if build_package "$p" > "$WORK/log-$p.txt" 2>&1; then
+        if build_watched "$p" "$WORK/log-$p.txt"; then
             mark "$p"; ok=$((ok + 1))
             echo "OK    $p"
         else
+            rc=$?
             fail=$((fail + 1)); failed+=("$p")
-            echo "FAIL  $p  (see $WORK/log-$p.txt)"
+            if [ "$rc" -eq 2 ]; then
+                echo "STALL $p  (no output for ${EL_STALL_MIN:-45} min, killed)"
+            else
+                echo "FAIL  $p  (see $WORK/log-$p.txt)"
+            fi
         fi
     done
     echo
