@@ -123,6 +123,91 @@ only moves it out of `/usr/local`, which an Arch package may not ship.
 
 **To close:** stage 2 builds it with the port's own python.
 
+### Host sonames the target does not have — `scripts/test-chroot.sh` check 3
+
+Nine libraries are requested by a shipped binary at the HOST's version while
+the repository ships the same library at Arch's:
+
+| requested | by | we ship |
+|---|---|---|
+| `libgpgme.so.11` | pacman (via libalpm) | gpgme 2.x, `.45` |
+| `libnettle.so.8`, `libhogweed.so.6` | gnutls, libcurl-gnutls | nettle |
+| `libicuuc.so.76` | libxml2 | icu |
+| `liblmdb.so.0` | krb5 | lmdb |
+| `libnsl.so.2` | pam | libnsl |
+| `libsasl2.so.2` | libldap, openldap | libsasl |
+| `libsodium.so.23` | openldap | libsodium |
+| `libdevmapper.so.1.02.1` | cryptsetup | device-mapper |
+
+This is stage 1 working as designed, not a defect list: stage 1 links the
+host, so it records the host's sonames. It is written down because the
+consequence is concrete — `pacman` in the stage-1 rootfs does not start:
+
+    pacman: error while loading shared libraries: libgpgme.so.11
+
+**To close:** stage 2. Every one of these dissolves when the package is
+rebuilt inside the chroot against the repository's own libraries. Nothing here
+should be hooked in stage 1; a hook would only hide it.
+
+Note for stage 2's design: because pacman cannot run inside the stage-1
+rootfs, stage 2 has to install with the HOST's pacman and `--root`, the way
+scripts/test-chroot.sh already does, and use the chroot only for building.
+
+### Three sonames with no provider at all — same check
+
+Distinct from the nine above, and each for its own reason:
+
+- `libpython3.13.so.1.0` ← `util-linux-libs`. It ships
+  `pylibmount.cpython-313-*.so`, built against the host's python. Inert: this
+  port ships no python, so nothing imports it. Stage 2 drops it by
+  construction — the chroot has no python either, so meson will not build it.
+  Worth naming because `arch-meson` was fixed to put this file in the right
+  PLACE (site-packages, not dist-packages) and the wrong ABI stayed invisible
+  until the soname audit.
+- `libselinux.so.1` ← `glibc`'s `makedb`. Deliberate, see above.
+- `libtcl8.6.so` ← `sqlite-tcl`, `sqlite-analyzer`. We ship tcl **9.0**;
+  sqlite's configure found the host's 8.6 tclConfig.sh. An honest admission:
+  the measurement that chose to BUILD tcl rather than drop these
+  sub-packages compared closure cost and never looked at the ABI. Stage 2
+  fixes it — tcl 9.0 is in the repository — but the reasoning had a blind
+  spot, and it was the same blind spot as the pylibmount one.
+
+### `lvm2` — `patches/pkgbuild/lvm2.sh`
+
+Only `device-mapper` is built. The `lvm2` half declares
+`thin-provisioning-tools`, which is Rust now, so a language runtime arrived
+through a fourth-order dependency. Nothing in the repository wants `lvm2`
+itself; cryptsetup wants device-mapper, which the same source produces.
+
+**To close:** build Rust, restore the sub-package, rebuild. A target that
+wants LVM needs this; dm-crypt and systemd do not.
+
+### SQL auxprop in libsasl — `patches/pkgbuild/libsasl.sh`
+
+Disabled. Its two database headers exist on this host, on paths configure does
+not try (`/usr/include/postgresql`, `/usr/include/mariadb`). Arch declares
+`depends=(glibc)` for libsasl because the plugins are dlopened, so nothing is
+lost.
+
+**To close:** supply the include paths, or leave it — a bootstrap has no SQL
+authentication backend to serve.
+
+### fuse2fs — `patches/pkgbuild/e2fsprogs.sh`
+
+Not built: no fuse3 on the host, and none in the closure.
+
+**To close:** add `fuse3`, and both the sub-package and the removal that feeds
+it come back on their own.
+
+### kbd without xkb — `patches/pkgbuild/kbd.sh`
+
+`loadkeys` cannot generate keymaps from an XKB database. Arch's kbd cannot
+either — it declares libxkbcommon nowhere, so Arch's chroot fails the same
+probe. Building it would want libxcb and xkeyboard-config behind it.
+
+**To close:** it is already closed with respect to Arch. Reopen only if a
+target grows a graphics stack.
+
 ---
 
 ## Architectural

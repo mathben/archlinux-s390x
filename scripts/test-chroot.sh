@@ -125,17 +125,51 @@ for f in "$REPO"/*.pkg.tar.*; do
         readelf -d "$b" 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p' \
             | sed "s|^|$_pn |" >> "$_sa/want"
     done < <(find "$_sa/x" -type f 2>/dev/null)
+    # Shipped FILENAMES count as supplied, not only recorded SONAMEs. ld.so
+    # resolves a DT_NEEDED entry by looking for a file of that name, and a
+    # library is free to record no DT_SONAME at all -- tcl's libtcl9.0.so does
+    # exactly that. Counting only SONAMEs reported it as missing while the file
+    # sat in usr/lib, which would have sent the next reader hunting for a
+    # packaging bug that does not exist. Symlinks count too: they are what
+    # ld.so follows.
+    find "$_sa/x" \( -type f -o -type l \) -name '*.so*' -printf '%f\n' \
+        2>/dev/null >> "$_sa/have"
 done
 sort -u "$_sa/have" > "$_sa/have.s"
 awk '{print $2}' "$_sa/want" | sort -u > "$_sa/want.s"
-if [ -s "$(comm -13 "$_sa/have.s" "$_sa/want.s" > "$_sa/miss"; echo "$_sa/miss")" ]; then
-    bad "$(wc -l < "$_sa/miss") soname(s) requested and never shipped:"
+comm -13 "$_sa/have.s" "$_sa/want.s" > "$_sa/miss"
+# CLASSIFY, because the two kinds need different work and an unclassified list
+# is just alarming. A missing soname whose library exists in the repository at
+# a DIFFERENT version is the ordinary stage-1 artefact: the binary linked the
+# host's copy, and stage 2 dissolves it by rebuilding in the chroot. A missing
+# soname with no provider at any version is a CLOSURE GAP -- a package that
+# still has to be built, or a dependency nobody declared.
+: > "$_sa/drift"; : > "$_sa/gap"
+while read -r m; do
+    _base=${m%%.so*}
+    if grep -q "^${_base}\.so" "$_sa/have.s"; then
+        echo "$m" >> "$_sa/drift"
+    else
+        echo "$m" >> "$_sa/gap"
+    fi
+done < "$_sa/miss"
+_report() {
     while read -r m; do
         printf '        %-24s <- %s\n' "$m" \
             "$(awk -v m="$m" '$2==m {print $1}' "$_sa/want" | sort -u | tr '\n' ' ')"
-    done < "$_sa/miss"
+    done < "$1"
+}
+if [ -s "$_sa/gap" ]; then
+    bad "$(wc -l < "$_sa/gap") soname(s) with NO provider at any version:"
+    _report "$_sa/gap"
 else
-    good "every requested soname is shipped by some package"
+    good "every requested soname has a provider in the repository"
+fi
+if [ -s "$_sa/drift" ]; then
+    printf '  note  %s soname(s) at the host version, provider present at another\n' \
+        "$(wc -l < "$_sa/drift")"
+    printf '        (stage-1 artefact by construction -- stage 2 rebuilds these)\n'
+    _report "$_sa/drift"
 fi
 rm -rf "$_sa"
 
