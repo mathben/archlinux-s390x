@@ -141,6 +141,19 @@ STAGE1_PACKAGES=(
     # curl" -- four links away from the missing name, and nothing in that
     # message points at libffi.
     libffi libevent
+    # Closure, fourth round -- and it closed to NOTHING, which is the point
+    # worth recording. It asked for libaio and thin-provisioning-tools, both
+    # wanted by lvm2 alone. thin-provisioning-tools is Rust now, so that was a
+    # language runtime arriving through a fourth-order dependency.
+    #
+    # Nothing in the repository wants `lvm2`. Checked across every .PKGINFO:
+    # cryptsetup wants device-mapper, and device-mapper is the OTHER package
+    # this same source produces. Dropping the lvm2 sub-package removed both
+    # entries and the Rust question with them -- see patches/pkgbuild/lvm2.sh.
+    #
+    # 35 packages, then 19, then 2, then 0. The closure has to be recomputed
+    # after each round rather than once: lvm2 DECLARED libaio all along, and
+    # the third round could not see it because lvm2 had not been built yet.
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
