@@ -154,6 +154,25 @@ STAGE1_PACKAGES=(
     # 35 packages, then 19, then 2, then 0. The closure has to be recomputed
     # after each round rather than once: lvm2 DECLARED libaio all along, and
     # the third round could not see it because lvm2 had not been built yet.
+    # What STAGE 2 needs in order to exist, which is a different question from
+    # what the repository needs to resolve.
+    #
+    # Stage 2 rebuilds everything INSIDE the stage-1 rootfs, so the tools that
+    # do the rebuilding have to be in that rootfs. The resolver never asked
+    # for these -- nothing in the repository depends on them -- so the closure
+    # rounds could not surface them. Enumerated instead from what makepkg and
+    # an autotools build actually invoke.
+    #
+    # fakeroot is the one that decides whether stage 2 can start at all:
+    # makepkg runs package() under it, and refuses to run as root. bison,
+    # flex, texinfo and groff are what the sources themselves call -- gcc,
+    # glibc and binutils all want makeinfo, and a great many configure scripts
+    # want bison.
+    #
+    # sudo is deliberately NOT here. makepkg needs it only for --syncdeps, and
+    # stage 2 passes --nodeps, so it would be a setuid binary in the chroot
+    # for no reason.
+    fakeroot bison flex texinfo groff
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
