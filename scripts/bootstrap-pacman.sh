@@ -61,6 +61,35 @@ install_host_deps() {
     #   libxml2   ICU, readline, and the doc toolchain.
     #   systemd   the widest surface of anything in stage 1; every one of
     #             these was checked against a real meson configure.
+    #
+    # The last two lines are the closure round, and every one of them was
+    # named by a build that stopped: popt by cryptsetup, scdoc by kmod,
+    # libgpg-error by libgcrypt, Cython by libseccomp, tcl by sqlite, argon2
+    # by openldap, autoconf-archive by tpm2-tss and ducktype by dbus.
+    #
+    # A note on checking these. `apt-cache policy` was reporting NONE for all
+    # eight, which looked like eight wrong names. This host answers in French:
+    # the field is `Candidat :`, not `Candidate:`, so a grep for the English
+    # word found nothing. Exactly the trap that broke util-linux's build --
+    # met again while verifying the fix for it. Query apt under LC_ALL=C.
+    #
+    # The last line is the round after that, and each fix uncovered the next:
+    # yelp-build by dbus (once ducktype was found), lmdb by krb5 (once the ss
+    # flag was gone), cmocka by tpm2-tss (once autoconf-archive fixed its
+    # macros). A build that gets further is progress even when it still fails.
+    #
+    # libsodium-dev replaced libargon2-dev, which was a wrong guess: openldap
+    # passes `--with-argon2=libsodium`, so argon2.h was never what it wanted.
+    # The error named argon2 and the answer was sodium -- the message pointing
+    # at the wrong library, one more time.
+    #
+    # verto by krb5 and uthash by tpm2-tss came the round after, each once its
+    # predecessor was satisfied. Three rounds of this taught one thing worth
+    # writing down: when a package stops on a missing TOOL three times in a
+    # row, stop installing tools. dbus wanted ducktype, then yelp-build, then
+    # qhelpgenerator -- and the third needs Qt, so the chain had no end. Its
+    # doc features are pinned off in a hook instead. A single missing library
+    # is a host dep; a queue of them is a feature that should be disabled.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -83,7 +112,9 @@ install_host_deps() {
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
         libfido2-dev libtss2-dev libmicrohttpd-dev libaudit-dev \
         libcryptsetup-dev libgcrypt20-dev libgnutls28-dev libpam0g-dev \
-        python3-pefile
+        libpopt-dev scdoc libgpg-error-dev cython3 tcl-dev libsodium-dev \
+        autoconf-archive ducktype \
+        yelp-tools liblmdb-dev libcmocka-dev libverto-dev uthash-dev
     install_host_shims
 }
 

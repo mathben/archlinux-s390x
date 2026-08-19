@@ -61,6 +61,38 @@ STAGE1_PACKAGES=(
     # never contain. The answer is --without-selinux per package, which is
     # what Arch's own build chroot gets for free by not having the header.
     pam brotli libxml2 systemd pacman-mirrorlist libmakepkg-dropins
+    # The closure, named by pacman's own resolver rather than guessed.
+    #
+    # Everything above was added because a BUILD stopped. These were added
+    # because scripts/test-chroot.sh ran `pacman -Syp` with --nodeps OFF --
+    # the check the whole bootstrap skips -- and the resolver listed exactly
+    # what the repository still owes. Nothing here is speculative.
+    #
+    # It is the MINIMAL closure, and two measurements shaped it. Dropping the
+    # python-brotli sub-package took the list from 70 unresolved names to 47
+    # and removed `python` outright, with libffi, mpdecimal and gdbm behind
+    # it. Dropping systemd-ukify and systemd-tests removed five more python
+    # packages, and ukify cannot run on s390x at all. Both are recorded in
+    # TODO.md rather than left implicit.
+    #
+    # An audit of the remaining names against the ARTEFACTS found two that
+    # were declared and never linked: guile by make, and libisl.so by gcc.
+    # Both get their declaration removed, because it should describe the
+    # binary we shipped.
+    #
+    # Building isl instead was the first plan, and it is recorded here because
+    # the reason it failed is the kind that wastes an afternoon: the Arch
+    # packaging repo for isl was last touched in 2017 and its only source URL
+    # is isl.gforge.inria.fr, which died with INRIA's GForge. There is nothing
+    # to build. That flipped the decision -- not a change of mind, new
+    # evidence.
+    #
+    # These will pull their own dependencies. That is expected: the resolver
+    # will name the next round as precisely as it named this one.
+    audit ca-certificates cryptsetup dbus elfutils gettext gnutls hwdata
+    icu jansson kbd kmod krb5 libcap-ng libgcrypt libidn2 libksba
+    libmpc libnsl libseccomp libssh2 libtirpc libunistring libusb libxcrypt
+    nettle npth openldap pambase pcre2 perl pinentry sqlite tpm2-tss
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
