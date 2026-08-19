@@ -114,6 +114,11 @@ install_host_deps() {
     # package is the answer. The libgcrypt hook exists precisely because that
     # rule did not apply there: 1.51 against a floor of 1.56 cannot be fixed
     # by installing anything.
+    #
+    # glib and libsecret are git's, for contrib/credential/libsecret. git is in
+    # stage 1 only because STAGE 2 needs it: 51 of the 159 PKGBUILDs take their
+    # sources from git+https, and makepkg validates that clone even under
+    # --noextract. Nothing in the repository depends on git.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -139,7 +144,8 @@ install_host_deps() {
         libpopt-dev scdoc libgpg-error-dev cython3 tcl-dev libsodium-dev \
         autoconf-archive ducktype \
         yelp-tools liblmdb-dev libcmocka-dev libverto-dev uthash-dev \
-        libtasn1-bin libevent-dev libaio-dev mercurial libnspr4-dev
+        libtasn1-bin libevent-dev libaio-dev mercurial libnspr4-dev \
+        libglib2.0-dev libsecret-1-dev
     install_host_shims
 }
 

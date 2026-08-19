@@ -33,6 +33,9 @@ REPO2="${REPO2:-$WORK/repo2/s390x}"
 ROOT="${ROOT:-$WORK/rootfs-stage2}"
 CONF="$WORK/pacman-stage2.conf"
 CACHE="$WORK/pacman-stage2.cache"
+CONF2="$WORK/pacman-stage2-both.conf"
+STATE2="$WORK/stage2.state"
+PATCH_DIR="${PATCH_DIR:-$HERE/../patches/pkgbuild}"
 BUILDER="${BUILDER:-$(id -un)}"
 BUILD_UID="$(id -u)"
 BUILD_GID="$(id -g)"
@@ -63,6 +66,9 @@ CHROOT_PKGS=(
     # that the newer library also provides. Listed explicitly, because nothing
     # will deduce it.
     libxcrypt-compat
+    # git: 51 PKGBUILDs use git sources, and makepkg validates the clone even
+    # under --noextract.
+    git
 )
 
 log()  { printf '\n== %s ==\n' "$*"; }
@@ -223,6 +229,148 @@ NOTE
     [ "$fail" -eq 0 ]
 }
 
+
+# Hooks that must NOT run in stage 2.
+#
+# Most stage-1 hooks are still right inside the chroot: the architectural ones
+# (systemd's EFI, glibc's SFrame, gcc's multilib) describe s390x, and the
+# host-absence ones (pam's fop, gnutls's leancrypto, krb5's ss) describe a
+# build environment that has not changed. A few are no-ops here and harmless
+# -- the libdir hooks insert a value meson would already have chosen.
+#
+# This list is for the ones that would actively BREAK. libgcrypt.sh extracts
+# our libgpg-error into $WORK/stage1-prefix and injects that absolute host path
+# into build(); the path does not exist in the chroot. It is also unnecessary
+# there, because the chroot HAS our libgpg-error 1.61 installed, so
+# /usr/bin/gpgrt-config is already the new one. That is stage 2 working as
+# intended: the reason for the hook disappears.
+# git.sh joins it for the same reason: it drops ZLIB_NG=1 because Ubuntu has no
+# zlib-ng headers, and our own zlib-ng package ships them, so inside the chroot
+# the flag is correct and the hook would be a downgrade.
+STAGE2_SKIP_HOOKS=(libgcrypt git)
+
+# Packages whose sources must be extracted on the HOST, because the chroot
+# cannot extract anything until they are rebuilt.
+#
+# THE CYCLE. makepkg extracts with bsdtar. bsdtar is libarchive, libarchive
+# links libxml2 for xar support, and the stage-1 libxml2 was linked against the
+# HOST's ICU 76 while our icu package ships ICU 78:
+#
+#   bsdtar: error while loading shared libraries: libicuuc.so.76
+#
+# So nothing unpacks in the chroot until libxml2 is rebuilt, and libxml2 cannot
+# unpack in the chroot. One of the nine soname drifts, turned into a bootstrap
+# cycle by the one tool that has to work first.
+#
+# Extraction is not compilation, so doing it outside is less of an impurity
+# than it looks -- the host's bsdtar unpacks a tarball byte for byte. What DOES
+# leak is prepare(), which `makepkg -o` also runs: mostly patching, but where
+# it runs autoreconf the generated configure carries the host's autotools.
+# That is why this is a LIST and not the default. Once libxml2 is rebuilt,
+# bsdtar works and everything after it extracts in the chroot.
+STAGE2_HOST_EXTRACT=(libxml2)
+
+host_extract() {
+    local n="$1" h
+    for h in "${STAGE2_HOST_EXTRACT[@]}"; do [ "$n" = "$h" ] && return 0; done
+    return 1
+}
+
+skip_hook() {
+    local n="$1" h
+    for h in "${STAGE2_SKIP_HOOKS[@]}"; do [ "$n" = "$h" ] && return 0; done
+    return 1
+}
+
+# stage2_build <name> -- rebuild one package inside the chroot and install it.
+#
+# The hook is applied on the HOST, not in the chroot: hooks are seds over the
+# PKGBUILD, and /build is the same directory seen from both sides, so the
+# patched file is what makepkg reads. Nothing needs to be duplicated inside.
+stage2_build() {
+    local name="$1"
+    local dir="$WORK/pkg/$name"
+    [ -d "$dir" ] || { echo "  no checkout for $name" >&2; return 1; }
+
+    ( cd "$dir" && git checkout -- PKGBUILD 2>/dev/null ) || true
+    if [ -f "$PATCH_DIR/$name.sh" ]; then
+        if skip_hook "$name"; then
+            echo "  hook skipped (stage-1 only)"
+        else
+            ( cd "$dir" && bash "$PATCH_DIR/$name.sh" ) || {
+                echo "  hook failed" >&2; return 1; }
+        fi
+    fi
+
+    ( cd "$dir" && rm -f ./*.pkg.tar.* ) || true
+    # NO --nocheck. Stage 1 skipped the test suites because they ran against
+    # the host's libraries and their verdict said nothing about the port. Here
+    # they test what was actually built, which is the whole point of stage 2.
+    local mkflags="--nodeps --ignorearch --skippgpcheck --skipchecksums"
+    if host_extract "$name"; then
+        echo "  extracting on the host (chroot bsdtar not usable yet)"
+        ( cd "$dir" && LC_ALL=C.UTF-8 makepkg $mkflags -o -C -f ) || return 1
+        # -e: build in the tree already there. -C would wipe it again.
+        in_chroot "cd /build/$name && makepkg $mkflags -e -f" || return 1
+    else
+        in_chroot "cd /build/$name && makepkg $mkflags -C -f" || return 1
+    fi
+
+    # An exit code is not proof. Only the artefact is.
+    local produced=()
+    shopt -s nullglob; produced=("$dir"/*.pkg.tar.*); shopt -u nullglob
+    [ "${#produced[@]}" -gt 0 ] || { echo "  no package produced" >&2; return 1; }
+
+    cp -f "${produced[@]}" "$REPO2/" || return 1
+    local names=() f
+    for f in "${produced[@]}"; do names+=("$(basename "$f")"); done
+    ( cd "$REPO2" && repo-add core.db.tar.gz "${names[@]}" ) > /dev/null || return 1
+
+    # Install into the chroot so the NEXT package builds against it. With the
+    # host's pacman and --root, because the chroot's own pacman does not start
+    # until stage 2 has rebuilt it.
+    sudo pacman --root "$ROOT" --config "$CONF2" --cachedir "$CACHE" \
+        --noconfirm -U "${produced[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
+        tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
+    printf '  installed %s package(s)\n' "${#produced[@]}"
+}
+
+# A pacman.conf that sees BOTH repositories: stage 2's output first, so a
+# rebuilt package wins, and stage 1 behind it for everything not yet redone.
+write_conf2() {
+    cat > "$CONF2" <<EOF
+[options]
+Architecture = s390x
+SigLevel = Never
+[stage2]
+Server = file://$REPO2
+[core]
+Server = file://$REPO1
+EOF
+}
+
+rebuild() {
+    write_conf2
+    mkdir -p "$REPO2"
+    local ok=0 fail=0 failed=()
+    for p in "$@"; do
+        if grep -qxF "$p" "$STATE2" 2>/dev/null; then
+            echo "== $p already rebuilt, skipping =="; continue
+        fi
+        log "stage 2: $p"
+        if stage2_build "$p" > "$WORK/stage2-log-$p.txt" 2>&1; then
+            echo "$p" >> "$STATE2"; ok=$((ok + 1)); echo "OK    $p"
+        else
+            fail=$((fail + 1)); failed+=("$p")
+            echo "FAIL  $p  (see $WORK/stage2-log-$p.txt)"
+            tail -5 "$WORK/stage2-log-$p.txt" | sed 's/^/      /'
+        fi
+    done
+    echo
+    echo "== stage 2: $ok rebuilt, $fail failed =="
+    [ "$fail" -eq 0 ] || printf '  failed: %s\n' "${failed[*]}"
+}
+
 main() {
     require_space
     [ -f "$REPO1/core.db.tar.gz" ] || die "no stage-1 repository at $REPO1"
@@ -232,8 +380,15 @@ main() {
     mount_chroot
     smoke_test || die "the chroot cannot build; stage 2 stops here"
     log "Chroot ready"
-    echo "  enter it with:"
-    echo "    sudo chroot --userspec=$BUILD_UID:$BUILD_GID $ROOT /usr/bin/bash -l"
+    if [ "$#" -eq 0 ]; then
+        echo "  enter it with:"
+        echo "    sudo chroot --userspec=$BUILD_UID:$BUILD_GID $ROOT /usr/bin/bash -l"
+        echo "  or rebuild packages:"
+        echo "    bash $0 texinfo perl m4 autoconf ..."
+        return 0
+    fi
+    touch "$STATE2"
+    rebuild "$@"
 }
 
 main "$@"

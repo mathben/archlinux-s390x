@@ -173,6 +173,16 @@ STAGE1_PACKAGES=(
     # stage 2 passes --nodeps, so it would be a setuid binary in the chroot
     # for no reason.
     fakeroot bison flex texinfo groff
+    # git, and it is not optional: 51 of the 159 PKGBUILDs take their sources
+    # from a git+https URL, and makepkg re-validates that clone even with
+    # --noextract. Without git in the chroot, stage 2 can rebuild a third of
+    # the repository and no more.
+    #
+    # Its own three: perl-error, perl-mailtools (which brings perl-timedate)
+    # and zlib-ng. Measured, not guessed -- and read from the depends array
+    # rather than from my own tool, which had reported `zsh` as a dependency
+    # of git. It is not; the tool's regex was catching a neighbouring array.
+    perl-error perl-timedate perl-mailtools zlib-ng git
     # And finally the package manager itself, built as an Arch package.
     pacman
 )
