@@ -27,6 +27,9 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Stage 2 rebuilds the same packages in the same order; packages.sh explains
+# why that order is not re-derived here.
+source "$HERE/packages.sh"
 WORK="${WORK:-$HOME/work/arch-s390x}"
 REPO1="${REPO1:-$WORK/repo/s390x}"
 REPO2="${REPO2:-$WORK/repo2/s390x}"
@@ -78,11 +81,23 @@ CHROOT_PKGS=(
 log()  { printf '\n== %s ==\n' "$*"; }
 die()  { printf 'stage2: %s\n' "$*" >&2; exit 1; }
 
-require_space() {
+# A PREDICATE and a fatal check, kept apart on purpose.
+#
+# require_space calls die, which exits. Using it inside the rebuild loop as
+# `require_space || break` looks like a clean early stop and is not one: the
+# break is unreachable, the run ends mid-loop, and the summary naming which
+# packages were rebuilt and which failed is never printed. At the start of the
+# run, exiting IS the right answer -- there is nothing to summarise yet.
+space_ok() {
     local free_mb
     free_mb=$(df -Pm "$WORK" | awk 'NR==2 {print $4}')
-    [ "${free_mb:-0}" -ge 8192 ] || die "only ${free_mb} MiB free under $WORK; need 8192"
+    if [ "${free_mb:-0}" -lt 8192 ]; then
+        printf '  only %s MiB free under %s; need 8192\n' "${free_mb:-0}" "$WORK" >&2
+        return 1
+    fi
 }
+
+require_space() { space_ok || die "not enough disk space to start"; }
 
 make_rootfs() {
     log "Populating the stage-2 rootfs from stage 1"
@@ -99,6 +114,37 @@ EOF
         --noconfirm -Sy "${CHROOT_PKGS[@]}" > "$WORK/stage2-install.txt" 2>&1 \
         || { tail -20 "$WORK/stage2-install.txt" >&2; die "populate failed"; }
     printf '  %s packages installed\n' "$(sudo ls "$ROOT/var/lib/pacman/local" | wc -l)"
+
+    # Put stage 2's own output back on top of it.
+    #
+    # make_rootfs wipes and repopulates from stage 1 on EVERY run, which is
+    # what makes the chroot reproducible -- and what would make stage 2
+    # unresumable, because stage2.state survives while the packages it names do
+    # not. The second invocation would say "already rebuilt, skipping" about
+    # packages that had just been thrown away, and the next build would link
+    # against stage-1 libraries while the record claimed otherwise. Silent, and
+    # the kind of thing found weeks later in an artefact.
+    #
+    # Stage 2 is a hundred and thirty-three packages. It will not finish in one
+    # invocation, so resuming has to be correct rather than approximately
+    # correct.
+    #
+    # --nodeps for the same reason the per-package install uses it: a chroot
+    # halfway through stage 2 is a mixed population, some packages declaring
+    # versioned soname dependencies and some declaring names. -U is fed the
+    # files directly, so --nodeps installs exactly these and not a resolved
+    # closure -- correct here, since stage 1 already supplied the closure just
+    # above.
+    shopt -s nullglob
+    local back=("$REPO2"/*.pkg.tar.*)
+    shopt -u nullglob
+    if [ "${#back[@]}" -gt 0 ]; then
+        sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
+            --noconfirm --nodeps -U "${back[@]}" \
+            > "$WORK/stage2-restore.txt" 2>&1 \
+            || { tail -20 "$WORK/stage2-restore.txt" >&2; die "restoring stage-2 output failed"; }
+        printf '  %s stage-2 package(s) restored\n' "${#back[@]}"
+    fi
 }
 
 configure_chroot() {
@@ -395,6 +441,21 @@ stage2_build() {
     # the host's libraries and their verdict said nothing about the port. Here
     # they test what was actually built, which is the whole point of stage 2.
     local mkflags="--nodeps --ignorearch --skippgpcheck --skipchecksums"
+    # EL_NOCHECK=1 for the FIRST pass over the list, and only that.
+    #
+    # Stage 1 skipped every test suite because it ran against the host's
+    # libraries, so its verdict said nothing about the port. In here a suite
+    # tests what was actually built, which is worth having -- but not on the
+    # pass whose job is to find out whether a hundred and thirty-three packages
+    # can be rebuilt at all. glibc's suite alone is longer than most of the
+    # builds around it, and a suite is the likeliest place in a build to wait
+    # forever on a tty or a socket.
+    #
+    # So: one pass to get a complete stage-2 repository, then the suites, then
+    # stage 3 -- where they run on a self-hosted toolchain and their verdict is
+    # about the port rather than about the bootstrap. Off by default is wrong
+    # here; this must be asked for.
+    [ "${EL_NOCHECK:-0}" = "1" ] && mkflags="$mkflags --nocheck"
     if host_extract "$name"; then
         echo "  extracting on the host (chroot bsdtar not usable yet)"
         ( cd "$dir" && LC_ALL=C.UTF-8 makepkg $mkflags -o -C -f ) || return 1
@@ -443,6 +504,23 @@ stage2_build() {
         --noconfirm --nodeps -U "${produced[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
         tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
     printf '  installed %s package(s)\n' "${#produced[@]}"
+
+    # Clean up, but only now, and only because it worked.
+    #
+    # A hundred and thirty-three source trees plus their pkg/ staging do not fit
+    # on this disk. Filling it is not a hypothetical here: it happened once, and
+    # what it looked like was not "no space" -- it was I/O errors from unrelated
+    # virtual machines on the same host. Cheap to prevent, expensive to explain.
+    #
+    # AFTER the install, so nothing is thrown away until the package is proven
+    # to exist and to install. NOT on failure -- src/ and pkg/ are the whole
+    # evidence of what went wrong, and a build that failed is exactly the one
+    # worth looking at. makepkg -c would delete them either way.
+    #
+    # Only makepkg's own two directories, and only inside this package's
+    # checkout. The git tree, the PKGBUILD, the downloaded sources and the built
+    # package are all left alone.
+    ( cd "$dir" && rm -rf src pkg ) || true
 }
 
 # A pacman.conf that sees BOTH repositories: stage 2's output first, so a
@@ -462,17 +540,29 @@ EOF
 rebuild() {
     write_conf2
     mkdir -p "$REPO2"
-    local ok=0 fail=0 failed=()
+    local ok=0 fail=0 rc=0 failed=()
     for p in "$@"; do
         if grep -qxF "$p" "$STATE2" 2>/dev/null; then
             echo "== $p already rebuilt, skipping =="; continue
         fi
+        # Per package, not once at the start. The run is long enough that the
+        # disk state at the end has nothing to do with the disk state when it
+        # was checked, and the failure mode is not local to this script.
+        space_ok || { echo "== stage 2: stopping, disk too low =="; break; }
         log "stage 2: $p"
-        if stage2_build "$p" > "$WORK/stage2-log-$p.txt" 2>&1; then
+        # watched, not a plain call: see bootstrap-pacman.sh. A hundred and
+        # thirty-three packages is far too many to sit in front of, and one
+        # silent build would hold the whole run.
+        if watched "$WORK/stage2-log-$p.txt" stage2_build "$p"; then
             echo "$p" >> "$STATE2"; ok=$((ok + 1)); echo "OK    $p"
         else
+            rc=$?
             fail=$((fail + 1)); failed+=("$p")
-            echo "FAIL  $p  (see $WORK/stage2-log-$p.txt)"
+            if [ "$rc" -eq 2 ]; then
+                echo "STALL $p  (no output for ${EL_STALL_MIN:-45} min, killed)"
+            else
+                echo "FAIL  $p  (see $WORK/stage2-log-$p.txt)"
+            fi
             tail -5 "$WORK/stage2-log-$p.txt" | sed 's/^/      /'
         fi
     done
@@ -495,10 +585,18 @@ main() {
         echo "    sudo chroot --userspec=$BUILD_UID:$BUILD_GID $ROOT /usr/bin/bash -l"
         echo "  or rebuild packages:"
         echo "    bash $0 texinfo perl m4 autoconf ..."
+        echo "    bash $0 --all      # all ${#STAGE1_PACKAGES[@]}, in order"
         return 0
     fi
     touch "$STATE2"
-    rebuild "$@"
+    # --all: the shared list, in its order. Typing a hundred and thirty-three
+    # names is not a workflow, and typing a subset of them is how an ordering
+    # gets quietly reinvented.
+    if [ "$1" = "--all" ]; then
+        rebuild "${STAGE1_PACKAGES[@]}"
+    else
+        rebuild "$@"
+    fi
 }
 
 main "$@"
