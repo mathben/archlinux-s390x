@@ -123,7 +123,47 @@ configure_chroot() {
     # stages, and comparing them is the whole point.
     sudo sed -i 's|^OPTIONS=.*|OPTIONS=(strip docs !libtool !staticlibs emptydirs zipman purge !debug !lto)|' \
         "$ROOT/etc/makepkg.conf"
+    # CFLAGS and friends, which arrive from the same place and are just as
+    # wrong. Our pacman package ships Arch's makepkg.conf verbatim, so the
+    # chroot inherits
+    #
+    #   CFLAGS="-march=x86-64 -mtune=generic -O2 ... -fcf-protection ..."
+    #
+    # On s390x cc rejects that, and the failure surfaces nowhere near the
+    # cause: meson simply cannot start.
+    #
+    #   libxml2/meson.build:1:0: ERROR: Unable to detect linker for compiler
+    #   `cc -Wl,--version ... -march=x86-64 -mtune=generic ...`
+    #
+    # They are emptied rather than translated, because "no flags" is what stage
+    # 1 used -- the host's makepkg.conf carries no CFLAGS line at all -- and
+    # 179 working packages are the evidence that it builds. Choosing s390x
+    # tuning (-march=z13, and only the hardening flags that exist on Z) is a
+    # deliberate later step, not something to guess at inside a bootstrap.
+    # TODO.md records it.
+    #
+    # APPENDED, not commented. The first attempt here put a # in front of each
+    # assignment, and CFLAGS is a MULTI-LINE assignment: commenting its first
+    # line left the continuations active and the quote unbalanced, so makepkg
+    # would not start at all --
+    #
+    #   /etc/makepkg.conf: line 109: unexpected EOF while looking for matching `"'
+    #
+    # An override at the end of the file needs no parsing of what came before:
+    # the last assignment is the one that counts.
+    sudo tee -a "$ROOT/etc/makepkg.conf" > /dev/null <<'EOC'
+
+# --- stage 2: the shipped values are Arch's x86_64 ones ---
+CFLAGS=""
+CXXFLAGS=""
+LDFLAGS=""
+LTOFLAGS=""
+RUSTFLAGS=""
+DEBUG_CFLAGS=""
+DEBUG_CXXFLAGS=""
+EOC
     sudo grep -E '^(CARCH|CHOST|MAKEFLAGS|OPTIONS)=' "$ROOT/etc/makepkg.conf" | sed 's/^/  /'
+    printf '  compiler flags: commented out (stage 1 used none)\n'
 
     # makepkg refuses to run as root, so the chroot needs the SAME uid as the
     # user who owns the bind-mounted sources. A bind mount carries the host's
@@ -251,7 +291,9 @@ NOTE
 # git.sh joins it for the same reason: it drops ZLIB_NG=1 because Ubuntu has no
 # zlib-ng headers, and our own zlib-ng package ships them, so inside the chroot
 # the flag is correct and the hook would be a downgrade.
-STAGE2_SKIP_HOOKS=(libgcrypt git)
+# meson.sh joins them: it moves a wheel out of /usr/local, which only the
+# host's Debian-patched python puts there.
+STAGE2_SKIP_HOOKS=(libgcrypt git meson)
 
 # Packages whose sources must be extracted on the HOST, because the chroot
 # cannot extract anything until they are rebuilt.

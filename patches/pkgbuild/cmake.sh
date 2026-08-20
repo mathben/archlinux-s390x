@@ -43,3 +43,42 @@ sed -n '/^makedepends=(/,/)/p' PKGBUILD | grep -q 'qt6-base' && {
 grep -q -- '--sphinx-man' PKGBUILD || {
     echo "cmake: man pages lost with the GUI" >&2; exit 1; }
 echo "cmake: --qt-gui dropped (no Qt, no display)"
+
+# emacs, for one lisp file, at the very last line of package().
+#
+#   PKGBUILD: line 64: emacs: command not found
+#
+# The build compiled everything, generated the sphinx documentation, installed
+# the whole tree, and then died on
+#
+#   emacs -batch -f batch-byte-compile .../site-lisp/cmake-mode.el
+#
+# make install already put cmake-mode.el in place; this only produces the
+# byte-compiled .elc beside it. Emacs loads the .el perfectly well without it,
+# a little slower on first load. Installing emacs -- forty megabytes and its
+# own dependency tree -- to pre-compile one editor mode for a bootstrap that
+# has no editor is not a trade worth making.
+#
+# THE SHAPE IS WORTH NOTING because it is the third time: pam's PDF removal,
+# e2fsprogs' fuse2fs removal, and now this. A failure on the LAST line of
+# package(), after a completely successful build, always looks like something
+# broke badly. It never is -- it is a tool the host does not have, doing
+# something optional.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = '  emacs -batch -f batch-byte-compile "${pkgdir}"/usr/share/emacs/site-lisp/cmake-mode.el\n'
+assert s.count(old) == 1, "cmake: the emacs byte-compile line is not in the expected form"
+s = s.replace(old, "", 1)
+old = "makedepends=(emacs\n"
+assert s.count(old) == 1, "cmake: makedepends does not start with emacs"
+s = s.replace(old, "makedepends=(\n", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q 'emacs -batch' PKGBUILD && { echo "cmake: the emacs step survived" >&2; exit 1; }
+sed -n '/^makedepends=(/,/)/p' PKGBUILD | grep -qw emacs && {
+    echo "cmake: emacs still in makedepends" >&2; exit 1; }
+grep -q 'cmake-mode' PKGBUILD && {
+    echo "cmake: a cmake-mode reference remains -- check it is harmless" >&2; }
+echo "cmake: emacs byte-compilation dropped (the .el is installed regardless)"
