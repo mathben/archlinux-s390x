@@ -163,7 +163,47 @@ DEBUG_CFLAGS=""
 DEBUG_CXXFLAGS=""
 EOC
     sudo grep -E '^(CARCH|CHOST|MAKEFLAGS|OPTIONS)=' "$ROOT/etc/makepkg.conf" | sed 's/^/  /'
-    printf '  compiler flags: commented out (stage 1 used none)\n'
+    printf '  compiler flags: emptied (stage 1 used none)\n'
+
+    # --auto-features auto, for this chroot only.
+    #
+    # Our own meson package ships /usr/bin/arch-meson, and it passes
+    # --auto-features enabled -- correct on Arch, whose build chroot has every
+    # optional tool. Ours has none of them:
+    #
+    #   doxygen xsltproc asciidoctor itstool convert fig2dev elinks
+    #   ducktype yelp-build        -- all ABSENT
+    #
+    # With `enabled`, each one is a hard error. libxml2 stops at
+    #
+    #   libxml2/doc/meson.build:3:10: ERROR: Program 'doxygen' not found
+    #
+    # MEASURED BEFORE CHOOSING, because building them was the other option and
+    # it is not close: doxygen alone wants clang, fmt, spdlog and llvm-libs --
+    # an entire compiler infrastructure for a documentation generator. Behind
+    # the other eight stand Ruby, ImageMagick and a GNOME stack. That is
+    # several times the size of everything built so far, for man pages.
+    #
+    # `auto` is meson's own default and means "build what you can". It is the
+    # honest setting for an environment with fewer tools, not a workaround --
+    # and what it drops is visible in the artefact, which is where this port
+    # checks everything anyway.
+    #
+    # A WRAPPER, not a patched package: /usr/bin/arch-meson belongs to meson and
+    # stage 2 must not ship a modified copy of it. meson takes the LAST
+    # occurrence of an option, so appending wins while leaving every other
+    # choice arch-meson makes intact. in_chroot puts /usr/local/bin first on
+    # PATH so this is found.
+    sudo install -d -m0755 "$ROOT/usr/local/bin"
+    sudo tee "$ROOT/usr/local/bin/arch-meson" > /dev/null <<'EOW'
+#!/usr/bin/env bash
+# stage 2: this chroot has none of Arch's optional documentation tools, so a
+# feature that cannot be built should be skipped rather than fatal. Appended,
+# because meson honours the last occurrence.
+exec /usr/bin/arch-meson "$@" --auto-features auto
+EOW
+    sudo chmod 755 "$ROOT/usr/local/bin/arch-meson"
+    printf '  arch-meson: wrapped with --auto-features auto\n'
 
     # makepkg refuses to run as root, so the chroot needs the SAME uid as the
     # user who owns the bind-mounted sources. A bind mount carries the host's
@@ -213,7 +253,7 @@ umount_chroot() {
 in_chroot() {
     sudo chroot --userspec="$BUILD_UID:$BUILD_GID" "$ROOT" \
         /usr/bin/env -i \
-        HOME=/build PATH=/usr/bin \
+        HOME=/build PATH=/usr/local/bin:/usr/bin \
         LC_ALL=C.UTF-8 \
         /usr/bin/bash -lc "$*"
 }
@@ -293,7 +333,9 @@ NOTE
 # the flag is correct and the hook would be a downgrade.
 # meson.sh joins them: it moves a wheel out of /usr/local, which only the
 # host's Debian-patched python puts there.
-STAGE2_SKIP_HOOKS=(libgcrypt git meson)
+# libarchive: stage 1 drops xar to break the bsdtar -> libxml2 -> libicuuc.so.76
+# cycle. In here the versions agree, so build it as Arch does.
+STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
 # Packages whose sources must be extracted on the HOST, because the chroot
 # cannot extract anything until they are rebuilt.
@@ -375,8 +417,30 @@ stage2_build() {
     # Install into the chroot so the NEXT package builds against it. With the
     # host's pacman and --root, because the chroot's own pacman does not start
     # until stage 2 has rebuilt it.
+    #
+    # --nodeps, and ONLY here. The first rebuilt package would not install:
+    #
+    #   unable to satisfy dependency 'libicuuc.so=78-64' required by libxml2
+    #
+    # Both halves of that are correct. This chroot runs makepkg's soname scan,
+    # so a package built in here declares versioned soname dependencies the way
+    # Arch's really do -- which is the faithful metadata stage 2 exists to
+    # produce. The stage-1 packages around it were built on the host under
+    # !autodeps, so our icu ships no `provides = libicuuc.so=78-64` to match.
+    #
+    # For the length of stage 2 the chroot is therefore a MIXED POPULATION:
+    # some packages describe their dependencies in Arch's terms and some in
+    # names only. No resolver can satisfy that, and none should be asked to --
+    # it is a property of a bootstrap halfway through, not of the output. It
+    # dissolves on its own as the last package is rebuilt.
+    #
+    # What is NOT relaxed is the metadata in the packages: they keep their
+    # versioned depends, and test-chroot.sh's RESOLVE check runs the resolver
+    # against the finished repository with --nodeps OFF. The relaxation is one
+    # install command wide, and the check that would catch its consequences is
+    # still there.
     sudo pacman --root "$ROOT" --config "$CONF2" --cachedir "$CACHE" \
-        --noconfirm -U "${produced[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
+        --noconfirm --nodeps -U "${produced[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
         tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
     printf '  installed %s package(s)\n' "${#produced[@]}"
 }

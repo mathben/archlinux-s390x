@@ -262,7 +262,10 @@ build_watched() {
 }
 
 built() { grep -qxF "$1" "$STATE" 2>/dev/null; }
-mark()  { echo "$1" >> "$STATE"; }
+# Appended only once: a forced rebuild of an already-built package must not
+# leave two identical lines in the state file. built() uses grep -qxF, so a
+# duplicate is harmless to the logic and confusing to a reader counting lines.
+mark()  { built "$1" || echo "$1" >> "$STATE"; }
 
 main() {
     mkdir -p "$WORK/pkg" "$REPO"
@@ -271,9 +274,28 @@ main() {
     # reinstalls them silently builds with whatever was deployed weeks ago.
     # Cheap, idempotent, and it makes this repository the source of truth.
     install_host_shims
+    # Named packages rebuild on demand, the way stage 2 already works.
+    #
+    # Without this, rebuilding one package means deleting its line from
+    # stage1.state first -- editing the record of what was built in order to
+    # build something. That file is the port's memory; the opening instruction
+    # for this work is to regenerate it from what is REALLY in repo/s390x and
+    # never from a log, and hand-editing it is the same mistake in a smaller
+    # form. Naming a package is also how a hook gets tested: libarchive's xar
+    # fix needed exactly one package rebuilt, not a pass over a hundred and
+    # ninety.
+    local list=("${STAGE1_PACKAGES[@]}") forced=0
+    if [ "$#" -gt 0 ]; then
+        list=("$@")
+        forced=1
+        printf '== stage 1: rebuilding on request: %s ==\n' "$*"
+    fi
     local ok=0 fail=0 rc=0 failed=()
-    for p in "${STAGE1_PACKAGES[@]}"; do
-        if built "$p"; then
+    for p in "${list[@]}"; do
+        # An explicit request outranks the state file. Asking for a package
+        # that is already built and being told it was skipped would make the
+        # command useless for the one job it exists to do.
+        if [ "$forced" -eq 0 ] && built "$p"; then
             echo "== $p already built, skipping =="
             continue
         fi

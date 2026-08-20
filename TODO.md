@@ -253,6 +253,83 @@ defaults is already the right one. Until then, pin rather than hope.
 
 ---
 
+### Documentation is skipped in the stage-2 chroot — `scripts/build-stage2.sh`
+
+Our own meson package ships `/usr/bin/arch-meson`, and it passes
+`--auto-features enabled`. That is right on Arch, whose build chroot has every
+optional tool installed. Ours has none of them:
+
+    doxygen  xsltproc  asciidoctor  itstool  convert
+    fig2dev  elinks    ducktype     yelp-build
+
+With `enabled`, each absent tool is a hard error rather than a skipped
+feature. libxml2 stopped on
+
+    libxml2/doc/meson.build:3:10: ERROR: Program 'doxygen' not found
+
+The chroot now gets a `/usr/local/bin/arch-meson` wrapper appending
+`--auto-features auto` — meson honours the last occurrence, so every other
+choice arch-meson makes survives. `/usr/local/bin` comes first on the
+chroot's PATH; `/usr/bin/arch-meson` is left exactly as the package shipped it.
+
+**Measured before choosing**, because building the tools was the alternative
+and it is not close: doxygen alone wants `clang`, `fmt`, `spdlog` and
+`llvm-libs` — a compiler infrastructure for a documentation generator. Behind
+the other eight stand Ruby, ImageMagick and a GNOME stack. Several times the
+size of everything built so far, for man pages.
+
+To restore at stage 3, once there is somewhere to build them from.
+
+### The docs split assumed the docs exist — `patches/pkgbuild/libxml2.sh`
+
+Consequence of the above, and the **fourth** appearance of one shape: pam's
+PDFs, e2fsprogs' `fuse2fs`, cmake's emacs byte-compilation, and now
+
+    mv: cannot stat '<pkgdir>/usr/share/doc': No such file or directory
+
+A failure on the last line of `package()`, after a completely successful
+compile, naming a path instead of a reason. It has never once been a broken
+build. The move is made conditional rather than deleted — on the host the docs
+do exist and belong in their own package.
+
+### libarchive drops xar for stage 1 — `patches/pkgbuild/libarchive.sh`
+
+Stage 2 reached its first packaging step and stopped on
+
+    bsdtar: error while loading shared libraries: libicuuc.so.76
+    ==> ERROR: Failed to create package file.
+
+The chain: `bsdtar` → `libarchive.so.13` → `libxml2.so.16` → `libicuuc.so.76`.
+The libxml2 in the chroot is our stage-1 build, and stage 1 builds against the
+HOST, whose ICU is 76; our icu package ships 78. So bsdtar cannot start — and
+bsdtar is what makepkg uses to write the package. **The package that would fix
+it is the one being built.** Nothing comes out of the chroot until this is
+broken from outside it.
+
+Supplying `libicuuc.so.76` from the host is the obvious move and the wrong
+one: untracked host binaries in `/usr/lib` are exactly what test-chroot.sh's
+ARTEFACT check exists to catch. A symlink to 78 does not work either — ICU
+version-suffixes every symbol, so `libicuuc.so.78` does not define
+`u_strlen_76`.
+
+The root is that libarchive links libxml2 at all: it wants it for **xar**, an
+Apple installer container. Nothing here reads one — makepkg writes
+`.pkg.tar.gz`, pacman reads it. `--without-xml2 --without-expat` removes the
+whole ICU chain instead of arguing about its version. Stage 1 only;
+`STAGE2_SKIP_HOOKS` lists libarchive, so stage 2 builds it as Arch does,
+against our own libxml2 and icu, where the versions agree.
+
+### Rebuilding one package at stage 1 — `scripts/build-stage1.sh`
+
+`build-stage1.sh` now takes package names, like stage 2 already did. Without
+it, rebuilding one package meant deleting its line from `stage1.state` first —
+editing the record of what was built in order to build something. That file is
+this port's memory, and the standing instruction is to regenerate it from what
+is really in `repo/s390x`, never from a log; hand-editing it is the same
+mistake in a smaller form. An explicit name outranks the state file, because
+being told "already built, skipping" would make the command useless for the
+one job it has.
+
 ## Environment, not the port
 
 ### Build locale — `scripts/bootstrap-pacman.sh`
