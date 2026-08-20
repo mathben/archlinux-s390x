@@ -18,6 +18,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/bootstrap-pacman.sh"
+source "$HERE/lib-watch.sh"
 
 WORK="${WORK:-$HOME/work/arch-s390x}"
 REPO="${REPO:-$WORK/repo/s390x}"

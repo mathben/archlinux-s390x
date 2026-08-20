@@ -187,4 +187,19 @@ STAGE1_PACKAGES=(
     cppdap jsoncpp libuv rhash hicolor-icon-theme cmake
     # And finally the package manager itself, built as an Arch package.
     pacman
+
+    # Tools the STAGE-2 CHROOT needs, which the host supplied for free.
+    #
+    # Stage 1 never noticed these: install_host_deps put them there with apt,
+    # and a build that finds its tool does not mention it. Inside the chroot
+    # there is no apt and no host, so every one of them has to exist as a
+    # package -- and the first thing stage 2 tried to rebuild stopped on
+    #
+    #   /bin/sh: line 1: rsync: command not found
+    #   make[1]: *** [.../Makefile:1463: headers_install] Error 127
+    #
+    # from linux-api-headers, the first entry in this list. xxhash is here
+    # because rsync links it.
+    xxhash
+    rsync
 )

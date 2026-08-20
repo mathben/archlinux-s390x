@@ -30,6 +30,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Stage 2 rebuilds the same packages in the same order; packages.sh explains
 # why that order is not re-derived here.
 source "$HERE/packages.sh"
+# watched(): bootstrap-pacman.sh cannot be sourced here -- see lib-watch.sh.
+source "$HERE/lib-watch.sh"
 WORK="${WORK:-$HOME/work/arch-s390x}"
 REPO1="${REPO1:-$WORK/repo/s390x}"
 REPO2="${REPO2:-$WORK/repo2/s390x}"
@@ -55,6 +57,11 @@ CHROOT_PKGS=(
     bison flex texinfo groff gettext
     # makepkg itself, and the one thing it cannot do without.
     pacman fakeroot
+    # rsync, which is not a runtime dependency of anything here. The kernel's
+    # headers_install target runs it, so linux-api-headers -- the first package
+    # stage 2 tries -- stopped on `rsync: command not found`. The host had it
+    # from apt, which is exactly why stage 1 never mentioned it.
+    rsync
     # libxcrypt-compat, for a reason no declaration expresses. perl declares
     # `libxcrypt` and `libcrypt.so`, both satisfied by libxcrypt, which ships
     # libcrypt.so.2. But perl's BINARY was linked on the host against Ubuntu's
@@ -381,6 +388,31 @@ NOTE
 # host's Debian-patched python puts there.
 # libarchive: stage 1 drops xar to break the bsdtar -> libxml2 -> libicuuc.so.76
 # cycle. In here the versions agree, so build it as Arch does.
+# Hoisted to the front of the stage-2 order.
+#
+# Stage 1's order is the real dependency closure and stage 2 keeps it -- but
+# stage 1 had the HOST for its build tools, and a few of those tools are
+# themselves in the list, sitting wherever their runtime dependencies put them.
+# In the chroot the stage-1 copy is what is available, and for these it does
+# not work:
+#
+#   texinfo -- binutils died on `make info-recursive`, and makeinfo says why:
+#
+#     Perl API version v5.40.0 of Texinfo::TreeElement does not match v5.42.0
+#
+#   Its XS module was compiled against the HOST's perl 5.40; our perl package
+#   is 5.42. Every package that builds .info documentation -- binutils, gcc,
+#   glibc, coreutils, gettext, m4 -- needs makeinfo, and texinfo sits near the
+#   end of the list because that is where its own dependencies are. Rebuilding
+#   it in here against our perl fixes it, which is the entire point of stage 2;
+#   it just has to happen first.
+#
+# Duplicates need no handling: these names appear again later in
+# STAGE1_PACKAGES, and rebuild() skips anything already in stage2.state. The
+# list is prepended rather than reordered, so stage 1's order stays the single
+# statement of the closure.
+STAGE2_FIRST=(texinfo)
+
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
 # Packages whose sources must be extracted on the HOST, because the chroot
@@ -593,7 +625,7 @@ main() {
     # names is not a workflow, and typing a subset of them is how an ordering
     # gets quietly reinvented.
     if [ "$1" = "--all" ]; then
-        rebuild "${STAGE1_PACKAGES[@]}"
+        rebuild "${STAGE2_FIRST[@]}" "${STAGE1_PACKAGES[@]}"
     else
         rebuild "$@"
     fi
