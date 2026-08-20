@@ -330,6 +330,35 @@ mistake in a smaller form. An explicit name outranks the state file, because
 being told "already built, skipping" would make the command useless for the
 one job it has.
 
+### 84 host binaries the chroot does not have — measured, not guessed
+
+`install_host_deps` installs 110 apt packages. Asking dpkg what each ships in
+`/usr/bin`, then testing every one of those against the stage-2 chroot, gives
+84 absent binaries. Worth doing once rather than discovering them a package at
+a time over a twenty-hour pass — two were found that way first (`rsync`,
+`makeinfo`) and each cost a full build to surface.
+
+Build tools, which will each block something:
+
+    gperf  help2man  po4a  xsltproc  scdoc  dtrace (systemtap)
+    cython  pyproject-build  sphinx-build  rst2man (docutils)
+
+Documentation only, and settled by `--auto-features auto`:
+
+    doxygen  asciidoctor  itstool  ducktype  yelp-build  yelp-check
+    elinks  fig2dev  transfig  rsvg-convert  clang (doxygen's)
+
+Not gaps at all, on inspection: `bison.yacc`, `fakeroot-tcp`, `faked-sysv`,
+`automake-1.17`, `aclocal-1.17`, `ncurses6-config`, `nspr-config`,
+`tcltk-depends` are Debian's alternative or versioned names for tools that are
+present under Arch's names. Counting them as missing would have sent someone
+building packages that already exist.
+
+Each is built when a package actually asks for it, not in advance — several
+carry closures much larger than themselves (`dtrace` brings systemtap,
+`sphinx-build` a Python stack), and paying for one before knowing it is needed
+is how a bootstrap doubles in size.
+
 ## Environment, not the port
 
 ### Build locale — `scripts/bootstrap-pacman.sh`
