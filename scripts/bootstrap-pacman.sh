@@ -412,7 +412,34 @@ build_package() {
     # once, rather than in a hook per package. C.UTF-8 and not C: the Arabic
     # and Ukrainian pages must stay valid UTF-8. Arch's own build chroot runs
     # in this locale, so this makes us match it rather than diverge.
+    # DEB_PYTHON_INSTALL_LAYOUT=deb_system, because Debian's python installs
+    # into /usr/local and an Arch package may not ship that tree.
+    #
+    #   $ python3 -c 'import sysconfig; print(sysconfig.get_default_scheme(),
+    #                 sysconfig.get_path("purelib"), sysconfig.get_path("scripts"))'
+    #   posix_local /usr/local/lib/python3.13/dist-packages /usr/local/bin
+    #   $ DEB_PYTHON_INSTALL_LAYOUT=deb_system python3 -c '...'
+    #   deb_system  /usr/lib/python3/dist-packages           /usr/bin
+    #
+    # Without it every wheel-installing PKGBUILD ships /usr/local, and the
+    # filesystem package owns every path in there -- including
+    # usr/local/share/man, which it ships as a SYMLINK. pacman then refuses the
+    # whole transaction:
+    #
+    #   error: failed to commit transaction (conflicting files)
+    #   /usr/local/share/man exists in both 'filesystem' and 'meson'
+    #
+    # Four packages hit this before it was fixed here rather than in each of
+    # them: python-brotli and python-libseccomp (both dropped for other
+    # reasons), meson and python-tqdm. Setting it once covers every python
+    # package, including ones not built yet.
+    #
+    # It does NOT finish the job: deb_system still says dist-packages, and
+    # Arch's python reads site-packages. That last move stays per-package,
+    # because only the packages whose modules are actually IMPORTED on the
+    # target need it -- meson does, and its hook does it.
     LC_ALL=C.UTF-8 \
+    DEB_PYTHON_INSTALL_LAYOUT=deb_system \
     makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck \
         -C -f || return 1
     # An exit code is not proof. Only the artefact is.
