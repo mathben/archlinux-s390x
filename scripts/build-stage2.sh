@@ -62,6 +62,17 @@ CHROOT_PKGS=(
     # stage 2 tries -- stopped on `rsync: command not found`. The host had it
     # from apt, which is exactly why stage 1 never mentioned it.
     rsync
+    # The same class, named by the failures of the first full pass rather than
+    # guessed at. Each one is here because a package said so:
+    #
+    #   gperf     coreutils, diffutils, systemd, libseccomp
+    #   wget      sed, grep, findutils
+    #   patchelf  curl
+    #   inetutils gnupg, for hostname
+    #   libxslt   shadow, for xsltproc
+    #   swig      audit
+    #   help2man  flex
+    gperf wget patchelf inetutils libxslt swig help2man
     # libxcrypt-compat, for a reason no declaration expresses. perl declares
     # `libxcrypt` and `libcrypt.so`, both satisfied by libxcrypt, which ships
     # libcrypt.so.2. But perl's BINARY was linked on the host against Ubuntu's
@@ -207,16 +218,46 @@ configure_chroot() {
     sudo tee -a "$ROOT/etc/makepkg.conf" > /dev/null <<'EOC'
 
 # --- stage 2: the shipped values are Arch's x86_64 ones ---
-CFLAGS=""
-CXXFLAGS=""
-LDFLAGS=""
+#
+# THE BASELINE CPU OF THIS PORT, which was being decided by accident.
+#
+# zlib stopped on
+#
+#   contrib/crc32vx/crc32_vx.c:205:10: error:
+#     '__builtin_s390_vec_unpackl' requires '-mvx'
+#
+# after its own configure had detected vector support and defined
+# -DHAVE_S390X_VX. Both halves were right, which is what made it worth
+# measuring instead of patching:
+#
+#   host gcc (Ubuntu)   --with-arch=z13 --with-tune=z16   default -march=arch11
+#   our  gcc            (nothing)                         default -march=arch5
+#
+# arch5 is z900, from 2000. arch11 is z13, from 2015. Arch's PKGBUILD names no
+# s390x baseline because Arch has no s390x, so our gcc fell back to the oldest
+# machine the port could possibly run on -- and every package using a vector
+# intrinsic failed, while zlib's configure went on detecting a CPU the compiler
+# had been told to forget.
+#
+# z13 is not a guess: it is what Ubuntu s390x, the host distribution, already
+# requires, so nothing that runs here today stops running. Every distribution
+# picks one of these; this port had simply never said which, and silence chose
+# the year 2000.
+#
+# TWO PLACES, because they answer different questions. Here is how this
+# distribution is COMPILED. patches/pkgbuild/gcc.sh passes --with-arch to the
+# compiler we SHIP, so a build done later on the target assumes the same
+# machine. Setting only this one leaves a gcc that quietly reverts to arch5.
+CFLAGS="-march=z13 -mtune=z16 -O2 -pipe -fno-plt -fexceptions"
+CXXFLAGS="$CFLAGS -Wp,-D_GLIBCXX_ASSERTIONS"
+LDFLAGS="-Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now"
 LTOFLAGS=""
 RUSTFLAGS=""
 DEBUG_CFLAGS=""
 DEBUG_CXXFLAGS=""
 EOC
     sudo grep -E '^(CARCH|CHOST|MAKEFLAGS|OPTIONS)=' "$ROOT/etc/makepkg.conf" | sed 's/^/  /'
-    printf '  compiler flags: emptied (stage 1 used none)\n'
+    printf '  baseline: -march=z13 -mtune=z16 (host Ubuntu uses the same)\n'
 
     # --auto-features auto, for this chroot only.
     #

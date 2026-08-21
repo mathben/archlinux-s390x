@@ -202,4 +202,28 @@ STAGE1_PACKAGES=(
     # because rsync links it.
     xxhash
     rsync
+    # The rest of that same class, named by stage 2's first full pass rather
+    # than guessed. 77 packages rebuilt, 57 failed, and fourteen of the
+    # failures named the tool they wanted outright:
+    #
+    #   gperf      coreutils, diffutils, systemd, libseccomp
+    #   wget       sed, grep, findutils
+    #   patchelf   curl
+    #   hostname   gnupg          (inetutils ships it)
+    #   xsltproc   shadow         (libxslt ships it)
+    #   swig       audit
+    #   help2man   flex
+    #
+    # All small and self-contained. Three more tools were asked for and are NOT
+    # here -- po4a, asciidoc's a2x, and asciidoctor -- because each brings a
+    # language runtime (Perl module stack, Python, Ruby) to render
+    # documentation. Those three packages get a hook instead, the same
+    # arbitration as --auto-features auto.
+    gperf
+    wget
+    patchelf
+    inetutils
+    libxslt
+    swig
+    help2man
 )

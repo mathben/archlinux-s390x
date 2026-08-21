@@ -401,3 +401,47 @@ PY
 grep -qF 'ln -sfv ../../../libgcc_s.so.1' PKGBUILD || {
     echo "gcc: libgcc_s.so link not repointed" >&2; exit 1; }
 echo "gcc: libgcc_s.so repointed to ../../../libgcc_s.so.1"
+
+# --- the baseline CPU of the compiler we SHIP ---------------------------------
+#
+# Arch's PKGBUILD names no s390x baseline, because Arch has no s390x. GCC's own
+# fallback for this target is arch5 -- z900, from the year 2000 -- and that is
+# what our gcc defaulted to while the host's Ubuntu gcc is configured
+# --with-arch=z13 --with-tune=z16. The consequence was not a warning:
+#
+#   contrib/crc32vx/crc32_vx.c:205:10: error:
+#     '__builtin_s390_vec_unpackl' requires '-mvx'
+#
+# zlib's configure had detected vector support and defined -DHAVE_S390X_VX,
+# then compiled with a compiler told to assume a machine that has none.
+#
+# build-stage2.sh sets the same pair in the chroot's makepkg.conf, which governs
+# how this distribution is COMPILED. This governs what the compiler we HAND OVER
+# assumes when someone builds on the target with no flags at all. Doing only the
+# first leaves a gcc that silently goes back to 2000.
+#
+# z13 because that is what the host distribution already requires: adopting it
+# cannot stop anything from running that runs today.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if "--enable-languages=" in l and "jit" not in l]
+assert len(hit) == 1, "gcc: expected one main --enable-languages line, got %d" % len(hit)
+i = hit[0]
+indent = re.match(r"^[ \t]*", lines[i]).group(0)
+assert lines[i].rstrip().endswith("\\"), "gcc: --enable-languages does not continue"
+lines.insert(i + 1, indent + "--with-arch=z13 --with-tune=z16 \\")
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q -- '--with-arch=z13' PKGBUILD || { echo "gcc: baseline not set" >&2; exit 1; }
+# On the configure line, not merely in the file.
+#
+# The first version of this check anchored on --enable-languages=ada and failed
+# on a PKGBUILD that was correctly patched: a section ABOVE has already
+# rewritten the language list, so `ada` is gone by the time this runs. The
+# guard was testing its own stale assumption about the file rather than the
+# edit -- the fourth time in this port that a check has verified something
+# adjacent to what it meant. Anchor on what the python actually matched.
+grep -A1 -E -- '--enable-languages=' PKGBUILD | grep -q -- '--with-arch=z13' || {
+    echo "gcc: --with-arch is in the file but not on the configure line" >&2; exit 1; }
+echo "gcc: baseline z13, tune z16"
