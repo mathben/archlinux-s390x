@@ -210,7 +210,7 @@ STAGE1_PACKAGES=(
     #   wget       sed, grep, findutils
     #   patchelf   curl
     #   hostname   gnupg          (inetutils ships it)
-    #   xsltproc   shadow         (libxslt ships it)
+    #   xsltproc   shadow         (libxslt ships it -- see below)
     #   swig       audit
     #   help2man   flex
     #
@@ -223,7 +223,16 @@ STAGE1_PACKAGES=(
     wget
     patchelf
     inetutils
-    libxslt
     swig
     help2man
+    # libxslt stays in the list because it is part of the distribution, but
+    # STAGE 1 CANNOT BUILD IT:
+    #
+    #   configure: error: Version 2.14.5 found. You need at least libxml2
+    #   2.15.1 for this version of libxslt
+    #
+    # 2.14.5 is Ubuntu's. Ours is 2.15.3 and exists only inside the stage-2
+    # chroot, so that is the only place libxslt can come from -- it is in
+    # STAGE2_FIRST, and a stage-1 run is expected to report it as failed.
+    libxslt
 )

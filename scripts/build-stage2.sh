@@ -72,7 +72,18 @@ CHROOT_PKGS=(
     #   libxslt   shadow, for xsltproc
     #   swig      audit
     #   help2man  flex
-    gperf wget patchelf inetutils libxslt swig help2man
+    #
+    # libxslt is NOT here, and cannot be: it will not build on the host at all.
+    #
+    #   configure: error: Version 2.14.5 found. You need at least libxml2
+    #   2.15.1 for this version of libxslt
+    #
+    # 2.14.5 is Ubuntu's libxml2. Ours is 2.15.3 -- and it exists only inside
+    # this chroot, which is the one place libxslt can be built. So it is built
+    # BY stage 2 rather than installed into it, which is why it sits in
+    # STAGE2_FIRST instead. Listing it here would fail make_rootfs with "target
+    # not found" against a repository that will never contain it.
+    gperf wget patchelf inetutils swig help2man
     # libxcrypt-compat, for a reason no declaration expresses. perl declares
     # `libxcrypt` and `libcrypt.so`, both satisfied by libxcrypt, which ships
     # libcrypt.so.2. But perl's BINARY was linked on the host against Ubuntu's
@@ -452,7 +463,12 @@ NOTE
 # STAGE1_PACKAGES, and rebuild() skips anything already in stage2.state. The
 # list is prepended rather than reordered, so stage 1's order stays the single
 # statement of the closure.
-STAGE2_FIRST=(texinfo)
+#   libxslt -- shadow died on `configure: error: xsltproc is missing.` and
+#   libxslt cannot be built on the host: its configure demands libxml2 2.15.1
+#   and Ubuntu ships 2.14.5. Ours is 2.15.3 and lives only in here, so this is
+#   the only place libxslt can come from -- built by stage 2, not installed
+#   into it. It has to precede shadow, which the list order does not do.
+STAGE2_FIRST=(texinfo libxslt)
 
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
