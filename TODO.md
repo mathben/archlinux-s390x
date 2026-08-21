@@ -212,6 +212,54 @@ target grows a graphics stack.
 
 ## Architectural
 
+### The baseline CPU is z13 — decided, not inherited
+
+`makepkg.conf` in the stage-2 chroot and `--with-arch` in `patches/pkgbuild/gcc.sh`.
+
+zlib stopped on
+
+    contrib/crc32vx/crc32_vx.c:205:10: error:
+      '__builtin_s390_vec_unpackl' requires '-mvx'
+
+*after* its own configure had detected vector support and defined
+`-DHAVE_S390X_VX`. Both halves were right, which is what made it worth
+measuring rather than patching:
+
+| | `--with-arch` | default `-march` |
+|---|---|---|
+| host gcc (Ubuntu) | `z13`, tune `z16` | `arch11` = z13, 2015 |
+| our gcc | *nothing* | `arch5` = z900, **2000** |
+
+Arch's PKGBUILD names no s390x baseline because Arch has no s390x, so GCC fell
+back to the oldest machine the target could possibly be. Every distribution
+picks one of these. **This port had never said which, and silence chose the year
+2000.**
+
+z13 because that is what Ubuntu s390x — the host distribution — already
+requires: adopting it cannot stop anything from running that runs today.
+
+**Two places, two different questions.** `makepkg.conf` says how this
+distribution is *compiled*. gcc's `--with-arch` says what the compiler we
+*ship* assumes when someone builds on the target with no flags at all. Setting
+only the first leaves a gcc that quietly reverts to arch5.
+
+### A third failure shape: the host is behind
+
+Contamination and closure gaps were the two known kinds. libxslt is neither:
+
+    configure: error: Version 2.14.5 found. You need at least libxml2 2.15.1
+
+2.14.5 is Ubuntu's libxml2; ours is 2.15.3. Nothing is contaminated and nothing
+is missing — the package simply cannot be built on this host, at any point,
+because the host is older than the package requires. It is built BY stage 2
+instead of installed into it, and hoisted in `STAGE2_FIRST` so it precedes the
+package that needs it. A stage-1 run is *expected* to report it as failed.
+
+Worth watching for: any Arch package whose dependency floor has moved past
+Ubuntu's version belongs in this category, and the error will always read like
+a missing dependency rather than an old one.
+
+
 Nothing to restore here. Listed so nobody spends an afternoon rediscovering
 why.
 

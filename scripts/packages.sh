@@ -225,6 +225,16 @@ STAGE1_PACKAGES=(
     inetutils
     swig
     help2man
+    # help2man's own closure. Stage 1 builds with --nodeps, so help2man built
+    # cleanly and was then UNINSTALLABLE -- populate stopped the whole of stage-2
+    # pass two on
+    #
+    #   unable to satisfy dependency 'perl-locale-gettext' required by help2man
+    #
+    # which is the routine consequence of --nodeps and the reason RESOLVE exists
+    # in test-chroot.sh: a build succeeding says nothing about whether the
+    # repository is complete.
+    perl-locale-gettext
     # libxslt stays in the list because it is part of the distribution, but
     # STAGE 1 CANNOT BUILD IT:
     #
