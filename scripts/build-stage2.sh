@@ -546,7 +546,21 @@ NOTE
 #   lookup in the chroot then failed. binutils first so the directory is gone
 #   before pkgconf builds; the arch-meson wrapper pins --libdir lib as the
 #   backstop.
-STAGE2_FIRST=(texinfo binutils pkgconf libxslt)
+#
+#   libxml2 -- because the xar cycle reformed INSIDE stage 2. libarchive is in
+#   STAGE2_SKIP_HOOKS, so stage 2 rebuilt it as Arch does, with xar, linking the
+#   libxml2 that happened to be installed at that moment: the stage-1 one, which
+#   wants the host's libicuuc.so.76. bsdtar then could not start, and bsdtar is
+#   what makepkg uses to extract sources and write packages -- so 39 of 39
+#   packages failed on the same line, including libxml2 itself. The stage-1 fix
+#   (drop xar) does not reach in here.
+#
+#   The way out needs no new mechanism: libarchive is dropped from stage2.state,
+#   which makes the restore fall back to the stage-1 build that has no xar and
+#   therefore no libxml2 at all. bsdtar starts, libxml2 gets rebuilt against our
+#   icu 78, and libarchive is rebuilt later in the list -- with xar, against a
+#   libxml2 whose ICU now agrees.
+STAGE2_FIRST=(texinfo libxml2 binutils pkgconf libxslt)
 
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
