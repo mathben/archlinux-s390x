@@ -235,6 +235,26 @@ STAGE1_PACKAGES=(
     # in test-chroot.sh: a build succeeding says nothing about whether the
     # repository is complete.
     perl-locale-gettext
+    # Python packaging, which three stage-2 builds stopped on:
+    #
+    #   /usr/bin/python: No module named build
+    #
+    # brotli, libseccomp and meson build their wheels with `python -m build`,
+    # and python-tqdm installs one. On the host these came from apt; in the
+    # chroot they have to be packages. Ordered by their own dependencies:
+    # flit-core bootstraps itself, then the two libraries build needs.
+    python-flit-core
+    python-packaging
+    python-pyproject-hooks
+    python-build
+    python-installer
+    python-setuptools
+    python-wheel
+    # scdoc: kmod's meson stopped on `Program 'scdoc' not found`. A man-page
+    # generator, but a tiny self-contained C one -- nothing like the language
+    # runtimes behind doxygen or asciidoctor, so it is cheaper to build than to
+    # hook around.
+    scdoc
     # libxslt stays in the list because it is part of the distribution, but
     # STAGE 1 CANNOT BUILD IT:
     #

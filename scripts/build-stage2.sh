@@ -191,8 +191,7 @@ EOF
         for f in "${cand[@]}"; do
             pn=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p')
             [ -n "$pn" ] || continue
-            grep -qxF "$pn" <<< "$inst" || continue
-            # AND it must still be one stage 2 considers done.
+            # It must be one stage 2 considers done.
             #
             # A name removed from stage2.state is exactly a package whose
             # stage-2 artefact is no longer trusted -- that is what removing it
@@ -211,6 +210,10 @@ EOF
             # split package like libxml2-docs is not in it under that name.
             pb=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgbase = //p')
             grep -qxF "${pb:-$pn}" "$STATE2" 2>/dev/null || continue
+            # Installed, or named as a tool stage 2 has to supply itself.
+            if ! grep -qxF "$pn" <<< "$inst"; then
+                printf ' %s ' "${CHROOT_STAGE2_PKGS[*]}" | grep -q " $pn " || continue
+            fi
             back+=("$f")
         done
         printf '  %s of %s stage-2 package(s) are installed and still trusted\n' \
@@ -375,7 +378,26 @@ EOC
 exec /usr/bin/arch-meson "$@" --auto-features auto --libdir lib
 EOW
     sudo chmod 755 "$ROOT/usr/local/bin/arch-meson"
-    printf '  arch-meson: wrapped with --auto-features auto\n'
+    printf '  arch-meson: wrapped with --auto-features auto, --libdir lib\n'
+
+    # DNS. Four packages failed in prepare() on
+    #
+    #   fatal: unable to access 'https://github.com/...': Could not resolve
+    #   host: github.com
+    #   Failed to clone 'gl-mod/bootstrap' a second time, aborting
+    #
+    # m4, libtool, groff and libnghttp2 fetch git submodules -- gnulib and
+    # friends -- and Arch's PKGBUILDs take their sources from git, so a chroot
+    # that cannot resolve a name cannot start those builds at all. The retry
+    # message is what makepkg prints; the reason is one line above it and easy
+    # to miss.
+    #
+    # COPIED, not bind-mounted: a bind would break the moment the host's
+    # resolv.conf is replaced (it is a systemd-resolved symlink here), and this
+    # file is re-made on every run anyway because make_rootfs wipes the tree.
+    sudo install -Dm644 /etc/resolv.conf "$ROOT/etc/resolv.conf" 2>/dev/null \
+        || printf '  WARNING: no /etc/resolv.conf to copy; git submodules will fail\n'
+    printf '  DNS: resolv.conf copied from the host\n'
 
     # makepkg refuses to run as root, so the chroot needs the SAME uid as the
     # user who owns the bind-mounted sources. A bind mount carries the host's
@@ -560,7 +582,37 @@ NOTE
 #   therefore no libxml2 at all. bsdtar starts, libxml2 gets rebuilt against our
 #   icu 78, and libarchive is rebuilt later in the list -- with xar, against a
 #   libxml2 whose ICU now agrees.
-STAGE2_FIRST=(texinfo libxml2 binutils pkgconf libxslt)
+#
+#   wget -- five packages died on
+#
+#     wget: error while loading shared libraries: libnettle.so.8
+#
+#   Our nettle ships .9; .8 is Ubuntu's. coreutils, sed, grep, findutils and
+#   diffutils all fetch their translation catalogues with wget in prepare(), so
+#   a wget that cannot start stops them before they compile a line. Exactly the
+#   bsdtar shape: a stage-1 TOOL linked against the host, which only matters
+#   once it is the tool actually being used.
+STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt)
+
+# Packages the chroot needs that can only come from repo2.
+#
+# The restore puts back stage-2 builds of what is ALREADY INSTALLED, which is
+# right for everything the stage-1 closure provides and silently wrong for
+# anything stage 2 introduces. libxslt is the case: it cannot be built on the
+# host at all, so it is absent from repo1, so it is never installed, so the
+# restore skips it -- while stage2.state says it is done and rebuild() reports
+#
+#   == libxslt already rebuilt, skipping ==
+#
+# and shadow keeps failing on `xsltproc is missing`. Built, recorded, and
+# nowhere to be found.
+#
+# Named explicitly rather than inferred. The obvious generalisation -- restore
+# everything trusted, installed or not -- brings back zlib-ng-compat, which
+# conflicts with the zlib stage 1 chose for this chroot. A list says which
+# packages are build tools and why; a conflict heuristic would have to be
+# extended every time a package like that appeared.
+CHROOT_STAGE2_PKGS=(libxslt)
 
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
@@ -583,7 +635,22 @@ STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 # it runs autoreconf the generated configure carries the host's autotools.
 # That is why this is a LIST and not the default. Once libxml2 is rebuilt,
 # bsdtar works and everything after it extracts in the chroot.
-STAGE2_HOST_EXTRACT=(libxml2)
+# wget joins libxml2 here for a reason worth stating: it cannot rebuild itself.
+#
+#   Fetching gnulib PO files from https://translationproject.org/latest/
+#   wget: error while loading shared libraries: libnettle.so.8
+#
+# gnulib's bootstrap fetches translation catalogues WITH wget, and the stage-1
+# wget links libnettle.so.8 directly -- Ubuntu's soname, where ours is .9. Our
+# gnutls is already a stage-2 package and correctly wants .9; wget is the only
+# thing left holding the old one, and the tool it needs to fix itself is itself.
+#
+# The host has a working wget, so it runs prepare() and does the fetching
+# (makepkg -o); the chroot then compiles and links against our nettle (-e).
+# Five more packages -- coreutils, sed, grep, findutils, diffutils -- fetch PO
+# files the same way and are unblocked by this one rebuild, which is why wget is
+# also hoisted into STAGE2_FIRST.
+STAGE2_HOST_EXTRACT=(libxml2 wget)
 
 host_extract() {
     local n="$1" h
