@@ -43,3 +43,46 @@ ZZPY
 grep -A1 -E "/configure( |\\\\)" PKGBUILD | grep -q -- '--libdir=/usr/lib' || {
     echo "binutils: --libdir is not on the configure line" >&2; exit 1; }
 echo "binutils: libdir pinned to /usr/lib (keeps /usr/lib64 a symlink)"
+
+# --- no PGO+LTO build ---------------------------------------------------------
+#
+# binutils built at stage 1 and failed at stage 2, in gold:
+#
+#   <artificial>:(.text+0xc44e): undefined reference to
+#     `void gold::gold_error_at_location<32, true>(...)'
+#   collect2: error: ld returned 1 exit status
+#
+# `<artificial>` and the .ltrans object names are LTO's. It does not come from
+# makepkg -- the chroot's OPTIONS carry !lto and LTOFLAGS is empty. It comes
+# from the PKGBUILD itself: --enable-pgo-build=lto, a profile-guided build with
+# link-time optimisation, which passes -flto=jobserver. gold's
+# explicitly-instantiated templates do not survive it here.
+#
+# Stage 1 got away with it because the host's GCC did the work. Stage 2 uses
+# ours, on s390x, at -O2 -march=z13 where stage 1 passed no flags at all.
+#
+# PGO and LTO are BUILD-TIME optimisations: dropping them changes how long
+# binutils takes to compile and how fast the resulting linker runs, not what it
+# can do. The alternatives were disabling gold -- removing a linker Arch ships
+# -- or debugging an LTO template instantiation bug in a linker upstream has
+# deprecated. For a bootstrap, a binutils that works beats a binutils that is
+# five percent faster; PGO also roughly triples the build, which this port pays
+# for on every stage.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if "--enable-pgo-build" in l]
+assert len(hit) == 1, "binutils: expected one --enable-pgo-build line, got %d" % len(hit)
+i = hit[0]
+assert lines[i].strip().startswith("--enable-pgo-build"), \
+    "binutils: --enable-pgo-build shares its line: %r" % lines[i]
+ind = re.match(r"^[ \t]*", lines[i]).group(0)
+lines[i] = ind + "# --enable-pgo-build=lto removed: gold's templates do not survive"
+lines.insert(i + 1, ind + "# LTO here, and PGO is build-time only -- no feature is lost.")
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q "enable-pgo-build=lto removed" PKGBUILD || {
+    echo "binutils: the PGO line was not commented" >&2; exit 1; }
+grep -qE "^[[:space:]]*--enable-pgo-build" PKGBUILD && {
+    echo "binutils: an active --enable-pgo-build line survived" >&2; exit 1; }
+echo "binutils: PGO+LTO build dropped"
