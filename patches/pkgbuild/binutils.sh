@@ -69,20 +69,31 @@ echo "binutils: libdir pinned to /usr/lib (keeps /usr/lib64 a symlink)"
 # five percent faster; PGO also roughly triples the build, which this port pays
 # for on every stage.
 python3 - <<'ZZPY'
-import io, re
+import io
+# DELETED, not commented.
+#
+# The first version replaced the line with a comment, and binutils then failed
+# with
+#
+#   /build/binutils/PKGBUILD: line 107: --enable-plugins: command not found
+#
+# because the line ended in a backslash. A comment inside a continued command
+# does not comment out an option -- it breaks the continuation, and the NEXT
+# option becomes a command of its own. The documented trap in this port was the
+# mirror image (commenting the first line of a multi-line assignment leaves the
+# continuations live); this is the same fact from the other side.
+#
+# Nothing is left in its place: the explanation belongs in this hook, and any
+# comment placed inside the configure invocation would break it again.
 lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
 hit = [i for i, l in enumerate(lines) if "--enable-pgo-build" in l]
 assert len(hit) == 1, "binutils: expected one --enable-pgo-build line, got %d" % len(hit)
 i = hit[0]
 assert lines[i].strip().startswith("--enable-pgo-build"), \
     "binutils: --enable-pgo-build shares its line: %r" % lines[i]
-ind = re.match(r"^[ \t]*", lines[i]).group(0)
-lines[i] = ind + "# --enable-pgo-build=lto removed: gold's templates do not survive"
-lines.insert(i + 1, ind + "# LTO here, and PGO is build-time only -- no feature is lost.")
+del lines[i]
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
-grep -q "enable-pgo-build=lto removed" PKGBUILD || {
-    echo "binutils: the PGO line was not commented" >&2; exit 1; }
 grep -qE "^[[:space:]]*--enable-pgo-build" PKGBUILD && {
     echo "binutils: an active --enable-pgo-build line survived" >&2; exit 1; }
 echo "binutils: PGO+LTO build dropped"
