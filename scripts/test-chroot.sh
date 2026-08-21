@@ -96,13 +96,29 @@ else
 fi
 sudo rm -rf "$ROOT.probe"
 
-note "2. ARTEFACT -- host contamination that raises no error"
+note "2. ARTEFACT -- wrong library directories, which raise no error"
+# TWO wrong libdirs, not one.
+#
+# This check was written for Debian's multiarch layout, lib/s390x-linux-gnu,
+# because that was the contamination stage 1 kept producing. It reported "no
+# Debian multiarch libdir anywhere" while binutils and pkgconf were shipping
+# files in /usr/lib64 -- true, and useless, because it was answering a narrower
+# question than the one it appeared to answer.
+#
+# usr/lib64 matters for a reason that is not symmetry. On Arch it is a SYMLINK
+# to lib; a package that ships it as a real directory changes what meson picks
+# as its default libdir, which changed where pkgconf installed, which changed
+# pkgconf's compiled-in search path, which broke every pkg-config lookup in the
+# chroot. One stray .a file at the bottom of that.
 n=0
 for f in "$REPO"/*.pkg.tar.*; do
-    c=$(bsdtar -tf "$f" 2>/dev/null | grep -c 's390x-linux-gnu/')
+    _l=$(bsdtar -tf "$f" 2>/dev/null)
+    c=$(grep -c 's390x-linux-gnu/' <<< "$_l")
     [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c multiarch paths"; n=$((n + 1)); }
+    c=$(grep -c '^usr/lib64/' <<< "$_l")
+    [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/lib64"; n=$((n + 1)); }
 done
-[ "$n" -eq 0 ] && good "no Debian multiarch libdir anywhere"
+[ "$n" -eq 0 ] && good "every library is under usr/lib -- no multiarch, no lib64"
 
 note "3. SONAME -- what binaries ask for versus what the repository ships"
 # Two passes over the packages: collect the soname each shared library

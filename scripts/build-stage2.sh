@@ -164,9 +164,37 @@ EOF
     # files directly, so --nodeps installs exactly these and not a resolved
     # closure -- correct here, since stage 1 already supplied the closure just
     # above.
+    # ONLY WHAT WAS ALREADY THERE. Restoring everything in repo2 fails:
+    #
+    #   :: zlib-ng-compat-2.3.3-1 and zlib-1:1.3.2-3 are in conflict
+    #   stage2: restoring stage-2 output failed
+    #
+    # Both are legitimate stage-2 output -- zlib-ng's PKGBUILD produces
+    # zlib-ng-compat, and zlib is its own package. A REPOSITORY holds both
+    # happily; an installed system cannot, because zlib-ng-compat replaces
+    # zlib. Stage 1 chose zlib for this chroot, and that choice is not stage
+    # 2's to revisit while it is rebuilding.
+    #
+    # So the filter is not a conflict list, which would need extending every
+    # time a package like this appeared. It is the intent stated exactly: put
+    # back the stage-2 build OF WHAT IS INSTALLED. A stage-2 package for
+    # something the chroot does not have was never part of this chroot, and
+    # installing it would quietly grow the build environment past what
+    # CHROOT_PKGS defines.
     shopt -s nullglob
-    local back=("$REPO2"/*.pkg.tar.*)
+    local cand=("$REPO2"/*.pkg.tar.*)
     shopt -u nullglob
+    local back=() inst f pn
+    if [ "${#cand[@]}" -gt 0 ]; then
+        inst=$(sudo pacman --root "$ROOT" --config "$CONF" -Qq 2>/dev/null)
+        for f in "${cand[@]}"; do
+            pn=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p')
+            [ -n "$pn" ] || continue
+            grep -qxF "$pn" <<< "$inst" && back+=("$f")
+        done
+        printf '  %s of %s stage-2 package(s) are installed here\n' \
+            "${#back[@]}" "${#cand[@]}"
+    fi
     if [ "${#back[@]}" -gt 0 ]; then
         sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
             --noconfirm --nodeps -U "${back[@]}" \
@@ -302,10 +330,28 @@ EOC
     sudo install -d -m0755 "$ROOT/usr/local/bin"
     sudo tee "$ROOT/usr/local/bin/arch-meson" > /dev/null <<'EOW'
 #!/usr/bin/env bash
-# stage 2: this chroot has none of Arch's optional documentation tools, so a
-# feature that cannot be built should be skipped rather than fatal. Appended,
-# because meson honours the last occurrence.
-exec /usr/bin/arch-meson "$@" --auto-features auto
+# stage 2, two overrides, both appended because meson honours the last
+# occurrence of an option.
+#
+#   --auto-features auto  This chroot has none of Arch's optional documentation
+#                         tools, so a feature that cannot be built should be
+#                         skipped rather than fatal.
+#
+#   --libdir lib          meson picks its default libdir by inspecting the
+#                         system: 64-bit plus a REAL /usr/lib64 means "lib64".
+#                         On Arch /usr/lib64 is a symlink, so it never triggers
+#                         and arch-meson passes no --libdir at all. In here
+#                         binutils had created a real /usr/lib64 (s390x's
+#                         default MULTILIB_OSDIRNAME), so meson flipped, pkgconf
+#                         installed there, and pkgconf COMPILED IN
+#                         /usr/lib64/pkgconfig as its search path -- while every
+#                         .pc file in the distribution is in /usr/lib/pkgconfig.
+#                         Result: every pkg-config lookup in the chroot failed,
+#                         reported by libxslt as a missing python-3.14 that was
+#                         installed. binutils is pinned too; this is the
+#                         backstop, because the heuristic will fire again the
+#                         moment anything else creates that directory.
+exec /usr/bin/arch-meson "$@" --auto-features auto --libdir lib
 EOW
     sudo chmod 755 "$ROOT/usr/local/bin/arch-meson"
     printf '  arch-meson: wrapped with --auto-features auto\n'
@@ -468,7 +514,18 @@ NOTE
 #   and Ubuntu ships 2.14.5. Ours is 2.15.3 and lives only in here, so this is
 #   the only place libxslt can come from -- built by stage 2, not installed
 #   into it. It has to precede shadow, which the list order does not do.
-STAGE2_FIRST=(texinfo libxslt)
+#
+#   binutils, then pkgconf -- in that order, and both before anything that uses
+#   pkg-config. Stage 1's repository is clean of /usr/lib64; the stage-2
+#   binutils build created it, because s390x's default MULTILIB_OSDIRNAME is
+#   lib64. meson then chose lib64 as its default libdir (it inspects the system,
+#   and a REAL /usr/lib64 flips it -- Arch's is a symlink), pkgconf installed
+#   there, and pkgconf compiled in /usr/lib64/pkgconfig as its search path while
+#   every .pc in the distribution sits in /usr/lib/pkgconfig. Every pkg-config
+#   lookup in the chroot then failed. binutils first so the directory is gone
+#   before pkgconf builds; the arch-meson wrapper pins --libdir lib as the
+#   backstop.
+STAGE2_FIRST=(texinfo binutils pkgconf libxslt)
 
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
 
