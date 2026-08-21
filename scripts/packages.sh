@@ -243,6 +243,12 @@ STAGE1_PACKAGES=(
     # and python-tqdm installs one. On the host these came from apt; in the
     # chroot they have to be packages. Ordered by their own dependencies:
     # flit-core bootstraps itself, then the two libraries build needs.
+    # Of these seven, only python-flit-core builds on the host. The other six
+    # compute their install paths from the running python, so the host bakes
+    # Debian's dist-packages into them -- three failed on a `rm` that found
+    # nothing, and three succeeded and shipped 180 unreachable module paths.
+    # They are built by stage 2 instead; a stage-1 run is expected to report
+    # them as failed, exactly like libxslt.
     python-flit-core
     python-packaging
     python-pyproject-hooks

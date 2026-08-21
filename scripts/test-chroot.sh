@@ -117,8 +117,27 @@ for f in "$REPO"/*.pkg.tar.*; do
     [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c multiarch paths"; n=$((n + 1)); }
     c=$(grep -c '^usr/lib64/' <<< "$_l")
     [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/lib64"; n=$((n + 1)); }
+    # dist-packages: Debian's name for site-packages.
+    #
+    # Added after three packages were built, declared OK, and shipped
+    # usr/lib/python3/dist-packages -- python-build, python-wheel and
+    # python-pyproject-hooks. Our python looks in
+    # /usr/lib/python3.14/site-packages, so every module in them was
+    # unreachable. This check said the repository was clean the whole time,
+    # because it was only ever asked about C library directories.
+    #
+    # What makes it worth a permanent check rather than a one-time fix: the
+    # three packages that FAILED in the same batch failed on `rm` not finding a
+    # path, which is what saved them from shipping the same way. Nothing about
+    # the three that succeeded looked wrong.
+    c=$(grep -c 'dist-packages/' <<< "$_l")
+    [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under dist-packages"; n=$((n + 1)); }
+    # usr/local: python's posix_local scheme, and anything else that took the
+    # host's idea of where a local install goes.
+    c=$(grep -c '^usr/local/' <<< "$_l")
+    [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/local"; n=$((n + 1)); }
 done
-[ "$n" -eq 0 ] && good "every library is under usr/lib -- no multiarch, no lib64"
+[ "$n" -eq 0 ] && good "no multiarch, no lib64, no dist-packages, no usr/local"
 
 note "3. SONAME -- what binaries ask for versus what the repository ships"
 # Two passes over the packages: collect the soname each shared library
