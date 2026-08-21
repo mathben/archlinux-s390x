@@ -187,12 +187,33 @@ EOF
     local back=() inst f pn
     if [ "${#cand[@]}" -gt 0 ]; then
         inst=$(sudo pacman --root "$ROOT" --config "$CONF" -Qq 2>/dev/null)
+        local pb
         for f in "${cand[@]}"; do
             pn=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p')
             [ -n "$pn" ] || continue
-            grep -qxF "$pn" <<< "$inst" && back+=("$f")
+            grep -qxF "$pn" <<< "$inst" || continue
+            # AND it must still be one stage 2 considers done.
+            #
+            # A name removed from stage2.state is exactly a package whose
+            # stage-2 artefact is no longer trusted -- that is what removing it
+            # MEANS. Restoring it anyway undoes the fix that motivated the
+            # removal, before the rebuild gets a chance to run.
+            #
+            # It happened twice, and the second time was invisible. The
+            # filesystem package built in pass one predates the hook that adds
+            # s390x's lib64 symlinks; restoring it REMOVED the symlink that
+            # stage 1 had just installed, so /usr/lib64 was absent again and
+            # the fix appeared not to work. binutils was the same shape and had
+            # to be moved out of repo2 by hand -- which is a workaround for a
+            # rule that was simply missing.
+            #
+            # pkgbase, not pkgname: stage2.state records what was BUILT, and a
+            # split package like libxml2-docs is not in it under that name.
+            pb=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgbase = //p')
+            grep -qxF "${pb:-$pn}" "$STATE2" 2>/dev/null || continue
+            back+=("$f")
         done
-        printf '  %s of %s stage-2 package(s) are installed here\n' \
+        printf '  %s of %s stage-2 package(s) are installed and still trusted\n' \
             "${#back[@]}" "${#cand[@]}"
     fi
     if [ "${#back[@]}" -gt 0 ]; then
