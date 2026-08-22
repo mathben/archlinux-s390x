@@ -341,49 +341,50 @@ configure_chroot() {
     #
     # An override at the end of the file needs no parsing of what came before:
     # the last assignment is the one that counts.
-    sudo tee -a "$ROOT/etc/makepkg.conf" > /dev/null <<'EOC'
-
-# --- stage 2: the shipped values are Arch's x86_64 ones ---
-#
-# THE BASELINE CPU OF THIS PORT, which was being decided by accident.
-#
-# zlib stopped on
-#
-#   contrib/crc32vx/crc32_vx.c:205:10: error:
-#     '__builtin_s390_vec_unpackl' requires '-mvx'
-#
-# after its own configure had detected vector support and defined
-# -DHAVE_S390X_VX. Both halves were right, which is what made it worth
-# measuring instead of patching:
-#
-#   host gcc (Ubuntu)   --with-arch=z13 --with-tune=z16   default -march=arch11
-#   our  gcc            (nothing)                         default -march=arch5
-#
-# arch5 is z900, from 2000. arch11 is z13, from 2015. Arch's PKGBUILD names no
-# s390x baseline because Arch has no s390x, so our gcc fell back to the oldest
-# machine the port could possibly run on -- and every package using a vector
-# intrinsic failed, while zlib's configure went on detecting a CPU the compiler
-# had been told to forget.
-#
-# z13 is not a guess: it is what Ubuntu s390x, the host distribution, already
-# requires, so nothing that runs here today stops running. Every distribution
-# picks one of these; this port had simply never said which, and silence chose
-# the year 2000.
-#
-# TWO PLACES, because they answer different questions. Here is how this
-# distribution is COMPILED. patches/pkgbuild/gcc.sh passes --with-arch to the
-# compiler we SHIP, so a build done later on the target assumes the same
-# machine. Setting only this one leaves a gcc that quietly reverts to arch5.
+    # A DROP-IN, not an append to makepkg.conf.
+    #
+    # Appending was wrong, and gcc is what proved it:
+    #
+    #   gfortran: error: unrecognized argument in option '-march=x86-64'
+    #   configure: error: GNU Fortran is not working; please report a bug ...
+    #
+    # Arch splits makepkg.conf into /etc/makepkg.conf.d/*.conf, sourced AFTER
+    # the main file. fortran.conf sets FFLAGS to the x86_64 list and FCFLAGS
+    # from it; rust.conf does the same for RUSTFLAGS. So an override at the end
+    # of makepkg.conf is itself overridden, silently, for exactly the variables
+    # it does not mention -- CFLAGS survived only because no drop-in sets it.
+    #
+    # The error is worth noting for its shape: gcc reported that ITS OWN
+    # freshly-built Fortran compiler "is not working", when the compiler was
+    # fine and had been handed another architecture's flags. Everything about
+    # the message points at the wrong thing.
+    #
+    # zz- so it sorts last: the drop-ins are read in glob order, and this has to
+    # be the final word. Owned by no package, and remade on every run since
+    # make_rootfs wipes the tree.
+    sudo install -d -m0755 "$ROOT/etc/makepkg.conf.d"
+    sudo tee "$ROOT/etc/makepkg.conf.d/zz-s390x.conf" > /dev/null <<'EOC'
+# stage 2: every flag variable, because Arch's are x86_64's and the drop-ins
+# under this directory would otherwise put them back.
 CFLAGS="-march=z13 -mtune=z16 -O2 -pipe -fno-plt -fexceptions"
 CXXFLAGS="$CFLAGS -Wp,-D_GLIBCXX_ASSERTIONS"
+FFLAGS="$CFLAGS"
+FCFLAGS="$CFLAGS"
 LDFLAGS="-Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now"
 LTOFLAGS=""
 RUSTFLAGS=""
 DEBUG_CFLAGS=""
 DEBUG_CXXFLAGS=""
+DEBUG_FFLAGS=""
+DEBUG_FCFLAGS=""
+DEBUG_RUSTFLAGS=""
 EOC
     sudo grep -E '^(CARCH|CHOST|MAKEFLAGS|OPTIONS)=' "$ROOT/etc/makepkg.conf" | sed 's/^/  /'
-    printf '  baseline: -march=z13 -mtune=z16 (host Ubuntu uses the same)\n'
+    printf '  baseline: -march=z13 -mtune=z16, in makepkg.conf.d/zz-s390x.conf\n'
+    # Named, because a drop-in that does not sort last does nothing and looks
+    # like it worked.
+    printf '  drop-ins read after it: %s\n' \
+        "$(sudo ls "$ROOT/etc/makepkg.conf.d" | awk '$0 > "zz-s390x.conf"' | tr '\n' ' ')none"
 
     # --auto-features auto, for this chroot only.
     #
