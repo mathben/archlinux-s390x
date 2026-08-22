@@ -89,3 +89,31 @@ ZZPY
 grep -q 'posix_local scheme installs' PKGBUILD || {
     echo "meson: the relocation was not inserted" >&2; exit 1; }
 echo "meson: wheel relocated out of /usr/local; STAGE-1 ONLY"
+
+# --- no reference manual ------------------------------------------------------
+#
+#   meson.build:6:4: ERROR: Problem encountered: Cannot build documentation
+#
+# meson builds its own reference manual with hotdoc, and its docs/meson.build
+# refuses outright when the tool is absent rather than degrading. FOUR LINES:
+# the setup, the compile, the install, and a reference_manual.json copied
+# separately. Leaving any of the last three behind fails on a path in
+# docs.build/ that was never created.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+pats = [r"meson\.py setup docs docs\.build", r"meson\.py compile -C docs\.build",
+        r"meson\.py install -C docs\.build", r"docs\.build/reference_manual\.json"]
+keep = []
+found = 0
+for l in lines:
+    if any(re.search(p, l) for p in pats):
+        found += 1
+        continue
+    keep.append(l)
+assert found == 4, "meson: expected four docs lines, got %d" % found
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(keep))
+ZZPY
+grep -q "docs.build" PKGBUILD && { echo "meson: a docs.build line survived" >&2; exit 1; }
+echo "meson: reference manual dropped (no hotdoc)"

@@ -45,3 +45,34 @@ grep -q "'zlib-ng'" PKGBUILD && {
 grep -qF "'grep' 'shadow' 'zlib')" PKGBUILD || {
     echo "git: zlib not substituted in depends" >&2; exit 1; }
 echo "git: plain zlib (no zlib-ng headers on the host); STAGE-1 ONLY"
+
+# --- no man pages -------------------------------------------------------------
+#
+#   asciidoc: command not found
+#
+# git's man pages come from asciidoc and xmlto, the Python documentation stack
+# this port has declined four times now. FOUR PLACES, which is what makes this
+# worth a comment: `man` appears as a make target twice and `install-man` twice,
+# once each for git proper and once each for contrib/subtree. Removing the build
+# targets and leaving the install targets gives
+#
+#   make: *** No rule to make target 'install-man'
+#
+# which reads like a broken Makefile.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+b = [i for i, l in enumerate(lines) if re.search(r"_make .*\ball man\b", l)]
+i2 = [i for i, l in enumerate(lines) if re.search(r"\binstall install-man\b", l)]
+assert len(b) == 2, "git: expected two `all man` targets, got %d" % len(b)
+assert len(i2) == 2, "git: expected two `install install-man` targets, got %d" % len(i2)
+for i in b:
+    lines[i] = re.sub(r"\ball man\b", "all", lines[i])
+for i in i2:
+    lines[i] = re.sub(r"\binstall install-man\b", "install", lines[i])
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "\ball man\b|\binstall-man\b" PKGBUILD && {
+    echo "git: a man target survived" >&2; exit 1; }
+echo "git: man pages dropped (no asciidoc, four places)"
