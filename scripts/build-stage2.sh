@@ -147,9 +147,64 @@ Server = file://$REPO1
 EOF
     sudo rm -rf "$ROOT" "$CACHE"
     sudo mkdir -p "$ROOT/var/lib/pacman" "$CACHE"
-    sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
-        --noconfirm -Sy "${CHROOT_PKGS[@]}" > "$WORK/stage2-install.txt" 2>&1 \
-        || { tail -20 "$WORK/stage2-install.txt" >&2; die "populate failed"; }
+    # EVERYTHING in stage 1, not a hand-picked core.
+    #
+    # CHROOT_PKGS grew one name at a time, each added because a build said so.
+    # It reached 158 of the 190 packages stage 1 had produced, and the 32 that
+    # were missing failed builds in a way that never mentioned them:
+    #
+    #   openldap: configure: error: --enable_argon2=yes requires --with-argon2
+    #
+    # while the PKGBUILD already passes --with-argon2=libsodium and libsodium
+    # sits in repo/s390x, simply not installed. configure had looked for a
+    # library, not found it, and reported a missing OPTION. krb5's "libldap not
+    # found", libsasl's "Could not locate OpenLDAP", lvm2's "libudev >= 143" and
+    # audit's undefined SASL symbol are all the same sentence in different words.
+    #
+    # Stage 2 builds with --nodeps, so nothing installs a build dependency for
+    # it. The alternative -- dropping --nodeps -- needs a working in-chroot
+    # pacman, and that pacman is one of the packages being rebuilt.
+    #
+    # So: install the distribution we have. This IS what stage 2 means -- the
+    # distribution rebuilt inside itself -- and every package in there is ours.
+    # CHROOT_PKGS stays as the documented core, and it is what the fallback
+    # below installs if the full set will not resolve.
+    local all=() f pn
+    shopt -s nullglob
+    for f in "$REPO1"/*.pkg.tar.*; do
+        pn=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p')
+        [ -n "$pn" ] || continue
+        # Alternatives, which a repository holds happily and a system cannot.
+        printf ' %s ' "${CHROOT_EXCLUDE[*]}" | grep -q " $pn " && continue
+        all+=("$pn")
+    done
+    shopt -u nullglob
+    printf '  %s packages in stage 1, %s excluded as alternatives\n' \
+        "${#all[@]}" "${#CHROOT_EXCLUDE[@]}"
+    # Two log files, not one. The first version wrote both attempts to
+    # stage2-install.txt, so the fallback's success overwrote the failure that
+    # caused it and the reason was gone.
+    if ! sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
+            --noconfirm -Sy "${all[@]}" > "$WORK/stage2-install-full.txt" 2>&1; then
+        # pacman puts the reason on a `::` line, and the first version of this
+        # grep matched three phrases that did not include it -- so it printed
+        # NOTHING between "did not resolve" and "falling back". A fallback that
+        # cannot say why it happened is the thing this message exists to
+        # prevent; it took reproducing the command by hand to learn that the
+        # answer was one package wanting zsh.
+        printf '  the full set did not resolve:\n'
+        # THREE kinds of refusal, because two greps in a row printed nothing
+        # here and each time the fallback looked unexplained: a dependency it
+        # cannot satisfy (`:: unable to satisfy`), a package pair in conflict,
+        # and a FILE owned by two packages (`exists in both`). The last one is
+        # invisible to -Syp, which is why the exclusion list was wrong twice.
+        grep -E "^error|^:: unable|in conflict|exists in both|target not found" \
+            "$WORK/stage2-install-full.txt" | sed 's/^/    /' | cut -c1-100 | head -6
+        printf '  falling back to CHROOT_PKGS (see stage2-install-full.txt)\n'
+        sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
+            --noconfirm -Sy "${CHROOT_PKGS[@]}" > "$WORK/stage2-install.txt" 2>&1 \
+            || { tail -20 "$WORK/stage2-install.txt" >&2; die "populate failed"; }
+    fi
     printf '  %s packages installed\n' "$(sudo ls "$ROOT/var/lib/pacman/local" | wc -l)"
 
     # Put stage 2's own output back on top of it.
@@ -485,7 +540,19 @@ in_chroot() {
 # of host artefact the ARTEFACT check exists to find.
 generate_ca_bundle() {
     log "Generating the CA bundle"
-    if in_chroot "update-ca-trust" > "$WORK/stage2-ca.txt" 2>&1; then
+    # AS ROOT, not through in_chroot.
+    #
+    # in_chroot runs as the build user, and the first version of this used it.
+    # update-ca-trust exited non-zero with
+    #
+    #   p11-kit: couldn't create file:
+    #     /etc/ca-certificates/extracted/tls-ca-bundle.pem
+    #
+    # which is a permission error wearing the words of a broken tool. Writing
+    # under /etc is root's job; makepkg is the only thing here that must not be
+    # root.
+    if sudo chroot "$ROOT" /usr/bin/env -i PATH=/usr/bin update-ca-trust \
+            > "$WORK/stage2-ca.txt" 2>&1; then
         local n
         n=$(sudo grep -c "BEGIN CERTIFICATE" \
             "$ROOT/etc/ca-certificates/extracted/tls-ca-bundle.pem" 2>/dev/null || echo 0)
@@ -669,6 +736,27 @@ STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
 # conflicts with the zlib stage 1 chose for this chroot. A list says which
 # packages are build tools and why; a conflict heuristic would have to be
 # extended every time a package like that appeared.
+# Packages a REPOSITORY can hold and a SYSTEM cannot: alternatives to something
+# else in there. zlib-ng-compat replaces zlib, and stage 1 chose zlib for this
+# chroot. Excluded by name rather than discovered by conflict, so populate stays
+# deterministic -- and if a new one appears, pacman names the pair and the
+# fallback says so out loud.
+# What a REPOSITORY can hold and a SYSTEM cannot. Found by installing the whole
+# repository into a probe root and excluding whatever pacman objected to, until
+# it stopped objecting -- four names out of 190, and 186 packages install.
+#
+# `-Syp` was not enough to find them. It resolves dependencies and says nothing
+# about FILE conflicts, so the first list came back clean and the real install
+# still failed. Two of these were only visible to an actual install.
+CHROOT_EXCLUDE=(
+    zlib-ng-compat      # replaces zlib; stage 1 chose zlib for this chroot
+    git-zsh-completion  # requires zsh, which this port does not build. A shell
+                        # completion file, not a build tool.
+    libcurl-compat      # both ship /usr/lib/libcurl.la, so they collide with
+    libcurl-gnutls      # curl itself. ABI-compatibility builds of libcurl; a
+                        # build chroot needs neither.
+)
+
 CHROOT_STAGE2_PKGS=(
     libxslt
     # The Python packaging set, for the same reason and a sharper one: their
