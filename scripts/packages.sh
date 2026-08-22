@@ -261,6 +261,15 @@ STAGE1_PACKAGES=(
     # runtimes behind doxygen or asciidoctor, so it is cheaper to build than to
     # hook around.
     scdoc
+    # nlohmann-json: a real closure gap, not a documentation cut. BOTH cmake and
+    # cppdap stop on
+    #
+    #   Could NOT find nlohmann_json (missing: nlohmann_json_DIR)
+    #
+    # It is a header-only C++ library -- one of the cheapest packages in this
+    # list -- and cmake is not optional here: the whole cmake/cppdap/jsoncpp/
+    # libuv group behind it is what several other packages build with.
+    nlohmann-json
     # libxslt stays in the list because it is part of the distribution, but
     # STAGE 1 CANNOT BUILD IT:
     #
