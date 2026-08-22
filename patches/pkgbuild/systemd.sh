@@ -237,3 +237,29 @@ if left:
 print("systemd: pkgname -> %s" % " ".join(names))
 PYGUARD
 echo "systemd: ukify disabled (guess_efi_arch raises on s390x), tests dropped"
+
+# --- no BPF framework ---------------------------------------------------------
+#
+#   meson.build:1052:9: ERROR: Dependency "libbpf" not found (tried pkgconfig)
+#
+# libbpf is not in this port's package list, and adding it is not a small step:
+# systemd's BPF programs are compiled with clang and llvm, so the dependency is
+# an entire second compiler toolchain for a feature that only matters to
+# systemd's own resource-control and socket-binding units.
+#
+# -Dbpf-framework=disabled is systemd's own switch for building without it,
+# which is what every distribution that does not ship BPF-based unit features
+# uses. Revisit if something on the target actually needs IPAddressAllow= or
+# RestrictNetworkInterfaces=.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "-Dbpf-framework=enabled"
+assert s.count(old) == 1, "systemd: expected one bpf-framework option, got %d" % s.count(old)
+s = s.replace(old, "-Dbpf-framework=disabled", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q -- "-Dbpf-framework=disabled" PKGBUILD || {
+    echo "systemd: bpf-framework was not disabled" >&2; exit 1; }
+echo "systemd: BPF framework disabled (no libbpf, no clang)"

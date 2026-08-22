@@ -53,3 +53,29 @@ PY
 [ "$(grep -c -- '--libdir=lib' PKGBUILD)" = 1 ] || {
     echo "pacman: libdir not forced to lib exactly once" >&2; exit 1; }
 echo "pacman: libdir forced to /usr/lib (Debian host defaults it to multiarch)"
+
+# --- no asciidoc documentation ------------------------------------------------
+#
+#   ERROR: Program 'asciidoc' not found or not executable
+#
+# pacman's man pages come from asciidoc, a Python toolchain this port declined
+# along with doxygen, asciidoctor and a2x -- each of them a language runtime
+# whose only job is rendering documentation. -Ddoc=disabled is meson's own
+# switch.
+#
+# Worth noting where this one lands: pacman IS the package manager, so its man
+# pages are the ones a user reaches for first. This is the most visible of the
+# documentation cuts and the strongest argument for restoring them at stage 3,
+# where the tools can be built against a self-hosted toolchain.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "-Ddoc=enabled"
+assert s.count(old) == 1, "pacman: expected one doc option, got %d" % s.count(old)
+s = s.replace(old, "-Ddoc=disabled", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q -- "-Ddoc=disabled" PKGBUILD || {
+    echo "pacman: doc was not disabled" >&2; exit 1; }
+echo "pacman: man pages disabled (no asciidoc)"
