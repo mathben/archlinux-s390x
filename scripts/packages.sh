@@ -279,6 +279,14 @@ STAGE1_PACKAGES=(
     # same reason: its package() would take Debian's dist-packages from the
     # host's python.
     python-setuptools-scm
+    # systemd generates part of its source with jinja2 templates:
+    #
+    #   meson.build:1620:15: ERROR: python3 is missing modules: jinja2
+    #
+    # Not documentation -- the build cannot proceed without it. python-markupsafe
+    # comes with it, as jinja's only dependency.
+    python-markupsafe
+    python-jinja
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
