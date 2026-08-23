@@ -362,6 +362,24 @@ configure_chroot() {
     # zz- so it sorts last: the drop-ins are read in glob order, and this has to
     # be the final word. Owned by no package, and remade on every run since
     # make_rootfs wipes the tree.
+    # DownloadUser, which the rebuilt pacman brings with it. nss failed on
+    #
+    #   error: problem setting DownloadUser 'alpm' (user does not exist)
+    #   ==> ERROR: 'pacman' returned a fatal error (1)
+    #
+    # Arch's pacman.conf drops privileges to `alpm` for downloads, and that user
+    # exists on a real Arch system because the package creates it via sysusers.d
+    # -- which `pacman --root` does not run, the same reason the CA bundle was
+    # never generated. Nothing in this chroot downloads anything (every source is
+    # already in /build, every package installed with -U from a local file), so
+    # the setting has no purpose here and its absence is fatal only because
+    # pacman checks it at startup.
+    if [ -f "$ROOT/etc/pacman.conf" ]; then
+        sudo sed -i 's/^\s*DownloadUser/#DownloadUser/' "$ROOT/etc/pacman.conf"
+        sudo grep -q '^#DownloadUser' "$ROOT/etc/pacman.conf" &&
+            printf '  pacman: DownloadUser disabled (no such user in a chroot)\n'
+    fi
+
     sudo install -d -m0755 "$ROOT/etc/makepkg.conf.d"
     sudo tee "$ROOT/etc/makepkg.conf.d/zz-s390x.conf" > /dev/null <<'EOC'
 # stage 2: every flag variable, because Arch's are x86_64's and the drop-ins
@@ -816,7 +834,17 @@ CHROOT_STAGE2_PKGS=(
 # Five more packages -- coreutils, sed, grep, findutils, diffutils -- fetch PO
 # files the same way and are unblocked by this one rebuild, which is why wget is
 # also hoisted into STAGE2_FIRST.
-STAGE2_HOST_EXTRACT=(libxml2 wget)
+# nss joins them, for the cheapest of the three reasons: its source is
+#
+#   hg+https://hg.mozilla.org/projects/nss#tag=NSS_..._RTM
+#
+# a MERCURIAL checkout, and the chroot has no hg -- it stopped on
+# `hg: command not found`. Packaging Mercurial would work and is not needed: the
+# host has it, and this mechanism exists precisely to let the host do the
+# fetching. Considered and rejected: mercurial itself is cheap (a Python
+# application), but it drags python-docutils in for its man pages and would sit
+# in the chroot forever to serve one package's source URL.
+STAGE2_HOST_EXTRACT=(libxml2 wget nss)
 
 host_extract() {
     local n="$1" h
@@ -832,7 +860,36 @@ host_extract() {
 stage2_build() {
     local name="$1"
     local dir="$WORK/pkg/$name"
-    [ -d "$dir" ] || { echo "  no checkout for $name" >&2; return 1; }
+    # CLONE IF ABSENT. Stage 2 used to refuse:
+    #
+    #   no checkout for python-jinja
+    #
+    # It could only rebuild what stage 1 had cloned -- which is wrong for every
+    # package stage 2 builds and stage 1 cannot. libxslt was the first (Ubuntu's
+    # libxml2 is too old to configure it), and the Python set followed (their
+    # package() reads the running python's paths, so the host bakes in
+    # dist-packages). Those are named in CHROOT_STAGE2_PKGS precisely because
+    # only this stage can produce them, and then this stage would not fetch them.
+    #
+    # Pinned to upstream.lock like stage 1's clone, so a package first built here
+    # is as reproducible as one built there.
+    if [ ! -d "$dir/.git" ]; then
+        local url="https://gitlab.archlinux.org/archlinux/packaging/packages/$name.git"
+        local sha=""
+        [ -f "$HERE/upstream.lock" ] &&
+            sha=$(awk -v n="$name" '$1 == n {print $2}' "$HERE/upstream.lock")
+        echo "  cloning $name"
+        rm -rf "$dir"
+        GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "$url" "$dir" || {
+            rm -rf "$dir"; echo "  clone failed: $url" >&2; return 1; }
+        if [ -n "$sha" ]; then
+            git -C "$dir" fetch -q --depth 1 origin "$sha" 2>/dev/null &&
+                git -C "$dir" checkout -q --detach FETCH_HEAD 2>/dev/null &&
+                echo "  pinned to ${sha:0:9} (upstream.lock)"
+        else
+            echo "  NOTE: $name is not in upstream.lock; built against HEAD" >&2
+        fi
+    fi
 
     ( cd "$dir" && git checkout -- PKGBUILD 2>/dev/null ) || true
     if [ -f "$PATCH_DIR/$name.sh" ]; then
@@ -930,8 +987,31 @@ stage2_build() {
     # against the finished repository with --nodeps OFF. The relaxation is one
     # install command wide, and the check that would catch its consequences is
     # still there.
+    # Install what this package produced, MINUS the alternatives. zlib-ng
+    # produces zlib-ng-compat, and installing it fails:
+    #
+    #   :: zlib-ng-compat-2.3.3-1 and zlib-1:1.3.2-3 are in conflict
+    #
+    # The package is correct and belongs in repo2; it just cannot be installed
+    # beside the zlib this chroot was built with. CHROOT_EXCLUDE already says so
+    # for the populate step, and the same list applies here -- one statement of
+    # which packages cannot coexist, used in both places.
+    local keep=() f2 pn2
+    for f2 in "${produced[@]}"; do
+        pn2=$(bsdtar -xOf "$f2" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p')
+        if printf ' %s ' "${CHROOT_EXCLUDE[*]}" | grep -q " ${pn2:-_} "; then
+            printf '  not installed here: %s (alternative to an installed package)\n' "$pn2"
+            continue
+        fi
+        keep+=("$f2")
+    done
+    if [ "${#keep[@]}" -eq 0 ]; then
+        printf '  nothing to install\n'
+        ( cd "$dir" && rm -rf src pkg ) || true
+        return 0
+    fi
     sudo pacman --root "$ROOT" --config "$CONF2" --cachedir "$CACHE" \
-        --noconfirm --nodeps -U "${produced[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
+        --noconfirm --nodeps -U "${keep[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
         tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
     printf '  installed %s package(s)\n' "${#produced[@]}"
 

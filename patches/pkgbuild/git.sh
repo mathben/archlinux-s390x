@@ -90,3 +90,35 @@ ZZPY
 grep -qE "\ball man\b|\binstall-man\b" PKGBUILD && {
     echo "git: a man target survived" >&2; exit 1; }
 echo "git: man pages dropped (no asciidoc, four places)"
+
+# --- no Rust ------------------------------------------------------------------
+#
+#   cargo: command not found
+#
+# git's PKGBUILD passes WITH_RUST=1 and lists rust in makedepends. This port does
+# not package Rust, and packaging it is not a package: rustc bootstraps from a
+# previous rustc, which is the one thing a from-source distribution cannot start
+# from -- Arch ships a binary to break that cycle, and this port has no such
+# escape on s390x.
+#
+# WHY IT SURFACED ONLY NOW. Stage 1 built git happily: the HOST has rustc, from
+# apt. So this is another entry in the longest-running theme of the port -- a
+# dependency the host satisfied invisibly, appearing the first time the chroot is
+# the one being asked. And it appeared only after the man-page section above
+# started running at stage 2, which it had not been doing.
+#
+# WITH_RUST=1 selects Rust reimplementations of some internals; git builds and
+# behaves the same without it. Both stages, so the two agree: stage 1 was
+# producing a git that stage 2 could not reproduce.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*WITH_RUST=1[ \t]*$", l)]
+assert len(hit) == 1, "git: expected one WITH_RUST=1 line, got %d" % len(hit)
+del lines[hit[0]]
+out = [l.replace(" 'rust'", "") if "makedepends" in l else l for l in lines]
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(out))
+ZZPY
+grep -qE "^[[:space:]]*WITH_RUST=1" PKGBUILD && { echo "git: WITH_RUST survived" >&2; exit 1; }
+grep -q "'rust'" PKGBUILD && { echo "git: rust still in makedepends" >&2; exit 1; }
+echo "git: built without Rust (no rustc to bootstrap from on s390x)"

@@ -31,3 +31,25 @@ io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
 grep -q -- "-D gtk_doc=false" PKGBUILD || { echo "p11-kit: gtk_doc not disabled" >&2; exit 1; }
 echo "p11-kit: gtk-doc manual disabled (glib was only locating its xrefs)"
+
+# --- and no man pages either --------------------------------------------------
+#
+# With gtk_doc off, the next line was
+#
+#   meson.build:94:4: ERROR: Problem encountered: Docbook stylesheet for man
+#   pages not found
+#
+# The stylesheets, not xsltproc -- which our libxslt supplies. Third package to
+# stop on exactly this: pam validates DocBook sources it cannot fetch, shadow
+# renders man pages from them. Shipping docbook-xsl would be a package that only
+# documentation needs; -D man is already in the option list.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*-D man=true[ \t]*$", l)]
+assert len(hit) == 1, "p11-kit: expected one -D man=true, got %d" % len(hit)
+lines[hit[0]] = lines[hit[0]].replace("man=true", "man=false")
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q -- "-D man=false" PKGBUILD || { echo "p11-kit: man not disabled" >&2; exit 1; }
+echo "p11-kit: man pages disabled (DocBook stylesheets absent, not xsltproc)"
