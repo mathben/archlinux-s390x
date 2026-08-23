@@ -263,3 +263,26 @@ ZZPY
 grep -q -- "-Dbpf-framework=disabled" PKGBUILD || {
     echo "systemd: bpf-framework was not disabled" >&2; exit 1; }
 echo "systemd: BPF framework disabled (no libbpf, no clang)"
+
+# --- no AppArmor ---------------------------------------------------------------
+#
+#   meson.build:1098:14: ERROR: Dependency "libapparmor" not found (tried pkgconfig)
+#
+# The second dependency systemd asked for that this port does not package, after
+# libbpf. AppArmor is a Debian/Ubuntu security module; Arch ships it but nothing
+# in this bootstrap uses it, and systemd's support for it is a set of unit
+# directives (AppArmorProfile=) rather than anything the system needs to boot.
+#
+# -Dapparmor=disabled is systemd's own switch. Revisit if the target ever runs
+# an AppArmor policy.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "-Dapparmor=enabled"
+assert s.count(old) == 1, "systemd: expected one apparmor option, got %d" % s.count(old)
+s = s.replace(old, "-Dapparmor=disabled", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q -- "-Dapparmor=disabled" PKGBUILD || { echo "systemd: apparmor not disabled" >&2; exit 1; }
+echo "systemd: AppArmor disabled"
