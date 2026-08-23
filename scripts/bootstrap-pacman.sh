@@ -366,6 +366,34 @@ build_package() {
             return 1
         }
     fi
+
+    # Land on the commit this port was written against, not on today's.
+    #
+    # The clone above is --depth 1 of whatever HEAD happens to be. Every hook
+    # under patches/pkgbuild/ asserts exact strings, so a version bump upstream
+    # breaks them -- which is the hooks working as intended, and also the reason
+    # a rebuild months from now would not reproduce this one.
+    #
+    # scripts/upstream.lock records one commit per checkout. When it names this
+    # package, the checkout is put on that commit; when it does not, the build
+    # proceeds on HEAD and SAYS SO, because an unlocked package is how the lock
+    # quietly stops covering the port.
+    if [ -f "$HERE_DIR/upstream.lock" ]; then
+        local _sha
+        _sha=$(awk -v n="$name" '$1 == n {print $2}' "$HERE_DIR/upstream.lock")
+        if [ -n "$_sha" ]; then
+            if [ "$(git -C "$WORK/pkg/$name" rev-parse HEAD 2>/dev/null)" != "$_sha" ]; then
+                if git -C "$WORK/pkg/$name" fetch -q --depth 1 origin "$_sha" 2>/dev/null &&
+                   git -C "$WORK/pkg/$name" checkout -q --detach FETCH_HEAD 2>/dev/null; then
+                    echo "  pinned to ${_sha:0:9} (upstream.lock)"
+                else
+                    echo "  WARNING: cannot reach locked commit ${_sha:0:9}; using HEAD" >&2
+                fi
+            fi
+        else
+            echo "  NOTE: $name is not in upstream.lock; building against HEAD" >&2
+        fi
+    fi
     cd "$WORK/pkg/$name" || return 1
     # Port patches. Upstream PKGBUILDs are written for x86_64 and some carry
     # flags no other architecture accepts -- glibc's --enable-sframe is the
