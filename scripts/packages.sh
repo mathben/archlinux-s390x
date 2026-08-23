@@ -279,6 +279,15 @@ STAGE1_PACKAGES=(
     # same reason: its package() would take Debian's dist-packages from the
     # host's python.
     python-setuptools-scm
+    # libaio: a real closure gap. lvm2 stops on
+    #
+    #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
+    #
+    # A small C library for asynchronous I/O, and one this port had already met
+    # from the other side: Ubuntu renamed its runtime to libaio.so.1t64 for
+    # time64, which was noted as a divergence long before anything needed the
+    # headers.
+    libaio
     # libxslt stays in the list because it is part of the distribution, but
     # STAGE 1 CANNOT BUILD IT:
     #
