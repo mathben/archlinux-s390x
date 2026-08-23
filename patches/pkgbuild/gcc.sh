@@ -445,3 +445,31 @@ grep -q -- '--with-arch=z13' PKGBUILD || { echo "gcc: baseline not set" >&2; exi
 grep -A1 -E -- '--enable-languages=' PKGBUILD | grep -q -- '--with-arch=z13' || {
     echo "gcc: --with-arch is in the file but not on the configure line" >&2; exit 1; }
 echo "gcc: baseline z13, tune z16"
+
+# --- no libstdc++ man pages ----------------------------------------------------
+#
+#   make: *** [Makefile:890: doc-install-man] Error 1
+#   ==> ERROR: A failure occurred in package_gcc()
+#
+# gcc now COMPILES here -- what remained was libstdc++'s API documentation, built
+# with doxygen. TWO PLACES: doc-man-doxygen in build() and doc-install-man in
+# package(). Removing only the first fails on the second, which is the shape this
+# port has now hit eight times.
+#
+# Worth noting how close this was to the end: the whole of gcc, including the
+# Fortran front end that had failed for six passes, built successfully and then
+# stopped on man pages.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines)
+       if re.search(r"doc-man-doxygen|doc-install-man", l)]
+assert len(hit) == 2, "gcc: expected two libstdc++ doc lines, got %d" % len(hit)
+for i in reversed(hit):
+    ind = re.match(r"^[ \t]*", lines[i]).group(0)
+    lines[i] = ind + ": # libstdc++ man pages need doxygen, which this port lacks."
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "doc-man-doxygen|doc-install-man" PKGBUILD && {
+    echo "gcc: a libstdc++ doc target survived" >&2; exit 1; }
+echo "gcc: libstdc++ man pages dropped"

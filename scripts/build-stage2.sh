@@ -717,7 +717,8 @@ NOTE
 #   the host, whose python would bake dist-packages into every one of them.
 STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
               python-packaging python-pyproject-hooks python-build
-              python-installer python-setuptools python-wheel)
+              python-installer python-setuptools python-wheel
+              python-setuptools-scm)
 
 # Packages the chroot needs that can only come from repo2.
 #
@@ -777,6 +778,7 @@ CHROOT_STAGE2_PKGS=(
     # dist-packages so it can say so next time.
     python-packaging python-pyproject-hooks python-build
     python-installer python-setuptools python-wheel
+    python-setuptools-scm
 )
 
 STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)

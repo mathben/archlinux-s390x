@@ -270,6 +270,15 @@ STAGE1_PACKAGES=(
     # list -- and cmake is not optional here: the whole cmake/cppdap/jsoncpp/
     # libuv group behind it is what several other packages build with.
     nlohmann-json
+    # python-setuptools-scm: python-tqdm's build stops on
+    #
+    #   setuptools-scm[toml]>=3.4
+    #
+    # which is a requirements line, not an error message -- pip printing what it
+    # could not find. Built by stage 2 with the rest of the Python set, for the
+    # same reason: its package() would take Debian's dist-packages from the
+    # host's python.
+    python-setuptools-scm
     # libxslt stays in the list because it is part of the distribution, but
     # STAGE 1 CANNOT BUILD IT:
     #

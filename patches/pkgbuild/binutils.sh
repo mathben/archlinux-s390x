@@ -97,3 +97,37 @@ ZZPY
 grep -qE "^[[:space:]]*--enable-pgo-build" PKGBUILD && {
     echo "binutils: an active --enable-pgo-build line survived" >&2; exit 1; }
 echo "binutils: PGO+LTO build dropped"
+
+# --- the extra targets are x86_64's --------------------------------------------
+#
+#   s390.cc:(.text+0x2d76): undefined reference to
+#     `void gold::gold_error_at_location<32, true>(...)'
+#
+# gold's s390 target file compiles code for BOTH s390 (32-bit) and s390x, and
+# references template instantiations for <32, true>. Those exist only if a
+# 32-bit s390 target is configured -- and the PKGBUILD asks for
+#
+#   --enable-targets=x86_64-pep,bpf-unknown-none
+#
+# x86_64-pep is the PE+ target for x86_64. It means nothing on this machine, and
+# its presence is why gold linked on Arch and not here: on x86_64 that line
+# happens to bring in the 32-bit instantiations gold's target files want.
+#
+# So this is not a workaround for a gold bug -- it is the same x86_64 assumption
+# as the -march=x86-64 in makepkg.conf, one layer further in. s390-linux-gnu is
+# the honest translation of that line, and it is what makes the templates exist.
+# bpf-unknown-none stays: it is architecture-neutral.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "--enable-targets=x86_64-pep,bpf-unknown-none"
+assert s.count(old) == 1, "binutils: expected one --enable-targets, got %d" % s.count(old)
+s = s.replace(old, "--enable-targets=s390-linux-gnu,bpf-unknown-none", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q -- "--enable-targets=s390-linux-gnu" PKGBUILD || {
+    echo "binutils: the target list was not translated" >&2; exit 1; }
+grep -q "x86_64-pep" PKGBUILD && {
+    echo "binutils: an x86_64 target survived" >&2; exit 1; }
+echo "binutils: extra targets translated to s390 (gold needs the 32-bit one)"
