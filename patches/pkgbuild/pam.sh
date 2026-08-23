@@ -22,3 +22,31 @@ io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
 grep -q -- "-Ddocs=disabled" PKGBUILD || { echo "pam: docs not disabled" >&2; exit 1; }
 echo "pam: DocBook documentation disabled"
+
+# --- and the PDFs it no longer produces ---------------------------------------
+#
+#   rm: cannot remove '<pkgdir>/usr/share/doc/Linux-PAM/*.pdf': No such file
+#
+# The line above it says why it exists:
+#
+#   # remove unreproducible pdf files
+#
+# pam builds PDFs whose bytes differ between runs, so the PKGBUILD deletes them
+# to keep the package reproducible. With -Ddocs=disabled they are never built,
+# and a cleanup step that finds nothing to clean is fatal under set -e.
+#
+# The rm becomes tolerant rather than being deleted: on a machine that does have
+# the DocBook stack, the PDFs WILL be there and they still have to go.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.search(r"\*\.pdf", l) and l.lstrip().startswith("rm ")]
+assert len(hit) == 1, "pam: expected one pdf removal, got %d" % len(hit)
+i = hit[0]
+ind = re.match(r"^[ \t]*", lines[i]).group(0)
+lines[i] = ind + "rm -f " + lines[i].lstrip()[3:].lstrip()
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "^[[:space:]]*rm -f .*\*\.pdf" PKGBUILD || {
+    echo "pam: the pdf removal was not made tolerant" >&2; exit 1; }
+echo "pam: PDF cleanup tolerates their absence"

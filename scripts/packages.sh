@@ -287,6 +287,21 @@ STAGE1_PACKAGES=(
     # comes with it, as jinja's only dependency.
     python-markupsafe
     python-jinja
+    # Three more the chroot asked for by name, each a build tool:
+    #
+    #   python-pkgconfig   brotli:     ERROR Missing dependencies: pkgconfig
+    #                      -- the python MODULE, not pkg-config the program,
+    #                      which has been there since the lib64 fix.
+    #   cython             libseccomp: ERROR Backend subprocess exited when
+    #                      trying to invoke get_requires_for_build_wheel
+    #                      -- its python bindings are Cython.
+    #   autoconf-archive   tpm2-tss:   configure.ac:139: error: undefined or
+    #                      overquoted macro: AC_MSG_WARN
+    #                      -- an AX_* macro is missing, so autoconf misreads the
+    #                      line and blames one it does know.
+    python-pkgconfig
+    cython
+    autoconf-archive
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
