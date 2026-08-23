@@ -718,7 +718,7 @@ NOTE
 STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
               python-packaging python-pyproject-hooks python-build
               python-installer python-setuptools python-wheel
-              python-setuptools-scm)
+              python-setuptools-scm python-markupsafe python-jinja)
 
 # Packages the chroot needs that can only come from repo2.
 #
@@ -779,6 +779,7 @@ CHROOT_STAGE2_PKGS=(
     python-packaging python-pyproject-hooks python-build
     python-installer python-setuptools python-wheel
     python-setuptools-scm
+    python-markupsafe python-jinja
 )
 
 # Packages whose sources must be extracted on the HOST, because the chroot
