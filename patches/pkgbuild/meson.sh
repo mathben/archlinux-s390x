@@ -40,6 +40,17 @@
 # will actually import this. Deriving it from the interpreter running the build
 # is the intuitive thing and the wrong one.
 set -euo pipefail
+# STAGE 1 ONLY -- this section, not this file.
+#
+# It used to be expressed by naming this hook in STAGE2_SKIP_HOOKS, which skips
+# the whole FILE. Then a section was appended that both stages need, and it
+# silently never ran: the package kept failing in stage 2 on the very thing the
+# new section fixes, and the log said "hook skipped (stage-1 only)" about a hook
+# that was now two thirds relevant.
+#
+# The scope belongs next to the reason, so each section decides for itself.
+if [ "${EL_STAGE:-1}" = 1 ]; then
+
 python3 - <<'ZZPY'
 import io
 s = io.open("PKGBUILD", encoding="utf-8").read()
@@ -89,6 +100,9 @@ ZZPY
 grep -q 'posix_local scheme installs' PKGBUILD || {
     echo "meson: the relocation was not inserted" >&2; exit 1; }
 echo "meson: wheel relocated out of /usr/local; STAGE-1 ONLY"
+else
+    echo "meson: chroot python has no posix_local scheme; no relocation needed"
+fi
 
 # --- no reference manual ------------------------------------------------------
 #

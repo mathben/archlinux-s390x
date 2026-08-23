@@ -53,6 +53,15 @@
 # MAKEFLAGS bound inside build() rather than at hook level.
 set -euo pipefail
 
+# STAGE 1 ONLY, the whole file. Expressed here rather than in a list kept by the
+# driver: a list of file names cannot say WHY, and when a hook later grows a
+# section that both stages need, the list silently skips that too. That happened
+# to git and meson.
+if [ "${EL_STAGE:-1}" != 1 ]; then
+    echo "libgcrypt: nothing to do at stage 2 -- our libgpg-error is installed in the chroot"
+    exit 0
+fi
+
 WORK="${WORK:-$HOME/work/arch-s390x}"
 PREFIX="$WORK/stage1-prefix"
 

@@ -403,7 +403,11 @@ build_package() {
     local hook="$PATCH_DIR/$name.sh"
     if [ -f "$hook" ]; then
         git checkout -- PKGBUILD 2>/dev/null || true
-        bash "$hook" || return 1
+        # EL_STAGE tells the hook which stage is asking. Some hooks -- git,
+        # meson, libgcrypt, libarchive -- exist partly or wholly to work around
+        # something about the HOST, and that part must not run in the chroot
+        # where the problem does not exist.
+        EL_STAGE=1 bash "$hook" || return 1
     fi
     rm -f ./*.pkg.tar.*
     # Explicit `|| return 1`. Relying on `set -e` here does NOT work: callers

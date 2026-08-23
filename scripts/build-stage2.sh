@@ -687,7 +687,7 @@ NOTE
 #   backstop.
 #
 #   libxml2 -- because the xar cycle reformed INSIDE stage 2. libarchive is in
-#   STAGE2_SKIP_HOOKS, so stage 2 rebuilt it as Arch does, with xar, linking the
+#   a hook that runs at stage 1 only, so stage 2 rebuilt it as Arch does, with
 #   libxml2 that happened to be installed at that moment: the stage-1 one, which
 #   wants the host's libicuuc.so.76. bsdtar then could not start, and bsdtar is
 #   what makepkg uses to extract sources and write packages -- so 39 of 39
@@ -781,8 +781,6 @@ CHROOT_STAGE2_PKGS=(
     python-setuptools-scm
 )
 
-STAGE2_SKIP_HOOKS=(libgcrypt git meson libarchive)
-
 # Packages whose sources must be extracted on the HOST, because the chroot
 # cannot extract anything until they are rebuilt.
 #
@@ -825,12 +823,6 @@ host_extract() {
     return 1
 }
 
-skip_hook() {
-    local n="$1" h
-    for h in "${STAGE2_SKIP_HOOKS[@]}"; do [ "$n" = "$h" ] && return 0; done
-    return 1
-}
-
 # stage2_build <name> -- rebuild one package inside the chroot and install it.
 #
 # The hook is applied on the HOST, not in the chroot: hooks are seds over the
@@ -843,10 +835,18 @@ stage2_build() {
 
     ( cd "$dir" && git checkout -- PKGBUILD 2>/dev/null ) || true
     if [ -f "$PATCH_DIR/$name.sh" ]; then
-        if skip_hook "$name"; then
-            echo "  hook skipped (stage-1 only)"
-        else
-            ( cd "$dir" && bash "$PATCH_DIR/$name.sh" ) || {
+            # EL_STAGE=2, and no skip list any more.
+            #
+            # There WAS a list -- naming hooks to ignore here. It skipped the
+            # whole FILE, and that broke silently the moment a listed hook grew a
+            # section both stages need: git and meson each kept failing in stage
+            # 2 on exactly what their new sections fix, while the log said
+            # "hook skipped (stage-1 only)" about a hook that was by then two
+            # thirds relevant.
+            #
+            # A list of file names cannot say why. The hooks read EL_STAGE and
+            # decide per section, with the reason written beside the guard.
+            ( cd "$dir" && EL_STAGE=2 bash "$PATCH_DIR/$name.sh" ) || {
                 echo "  hook failed" >&2; return 1; }
             # A hook can leave a PKGBUILD that no longer parses, and makepkg
             # reports that far from its cause:
@@ -863,7 +863,6 @@ stage2_build() {
             # calls a valid file broken without it.
             ( cd "$dir" && bash -O extglob -n PKGBUILD ) || {
                 echo "  hook left an unparseable PKGBUILD" >&2; return 1; }
-        fi
     fi
 
     ( cd "$dir" && rm -f ./*.pkg.tar.* ) || true

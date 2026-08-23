@@ -37,6 +37,15 @@
 # leaves the package uninstallable for a reason the diff appears to fix -- the
 # fifth place, and the one that has cost the most time in this port.
 set -euo pipefail
+
+# STAGE 1 ONLY, the whole file. Expressed here rather than in a list kept by the
+# driver: a list of file names cannot say WHY, and when a hook later grows a
+# section that both stages need, the list silently skips that too. That happened
+# to git and meson.
+if [ "${EL_STAGE:-1}" != 1 ]; then
+    echo "libarchive: nothing to do at stage 2 -- our libxml2 and icu agree in the chroot"
+    exit 0
+fi
 python3 - <<'ZZPY'
 import io, re
 s = io.open("PKGBUILD", encoding="utf-8").read()
