@@ -98,36 +98,54 @@ grep -qE "^[[:space:]]*--enable-pgo-build" PKGBUILD && {
     echo "binutils: an active --enable-pgo-build line survived" >&2; exit 1; }
 echo "binutils: PGO+LTO build dropped"
 
-# --- the extra targets are x86_64's --------------------------------------------
+# --- no gold, and no s390-specific extra target -------------------------------
 #
-#   s390.cc:(.text+0x2d76): undefined reference to
-#     `void gold::gold_error_at_location<32, true>(...)'
+# This section was written twice, and the first version was wrong in an
+# instructive way.
 #
-# gold's s390 target file compiles code for BOTH s390 (32-bit) and s390x, and
-# references template instantiations for <32, true>. Those exist only if a
-# 32-bit s390 target is configured -- and the PKGBUILD asks for
+# gold would not link:
 #
-#   --enable-targets=x86_64-pep,bpf-unknown-none
+#   s390.cc: undefined reference to `gold::gold_error_at_location<32, true>'
 #
-# x86_64-pep is the PE+ target for x86_64. It means nothing on this machine, and
-# its presence is why gold linked on Arch and not here: on x86_64 that line
-# happens to bring in the 32-bit instantiations gold's target files want.
+# gold's s390 target file compiles for both s390 and s390x and needs <32, true>
+# template instantiations, which exist only when a 32-bit s390 target is
+# configured. The PKGBUILD asked for --enable-targets=x86_64-pep, so the first
+# fix translated that to s390-linux-gnu -- the honest-looking equivalent. bfd's
+# configure answered:
 #
-# So this is not a workaround for a gold bug -- it is the same x86_64 assumption
-# as the -march=x86-64 in makepkg.conf, one layer further in. s390-linux-gnu is
-# the honest translation of that line, and it is what makes the templates exist.
-# bpf-unknown-none stays: it is architecture-neutral.
+#   *** Specify --enable-obsolete to build it anyway.
+#   *** Support will be REMOVED in the next major release of BINUTILS,
+#   *** unless a maintainer comes forward.
+#
+# 32-bit s390 is OBSOLETE in binutils. So gold on s390x cannot be built without
+# enabling a target upstream has announced it is deleting -- and gold itself is
+# deprecated, with bfd ld the default here already (--enable-ld=default). Turning
+# on one deprecated thing to build another is not a trade worth making.
+#
+# So: gold is dropped, and the extra target list keeps only bpf-unknown-none,
+# which is architecture-neutral. x86_64-pep goes because it names a format for a
+# machine this is not.
+#
+# WHAT IS LOST: /usr/bin/ld.gold. Nothing in this port invokes it, ld is the
+# default, and upstream is removing gold. Recorded rather than hidden -- the
+# stage-2 binutils will not match Arch's file list, and this is why.
 set -euo pipefail
 python3 - <<'ZZPY'
-import io
-s = io.open("PKGBUILD", encoding="utf-8").read()
-old = "--enable-targets=x86_64-pep,bpf-unknown-none"
-assert s.count(old) == 1, "binutils: expected one --enable-targets, got %d" % s.count(old)
-s = s.replace(old, "--enable-targets=s390-linux-gnu,bpf-unknown-none", 1)
-io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+
+t = [i for i, l in enumerate(lines) if "--enable-targets=" in l]
+assert len(t) == 1, "binutils: expected one --enable-targets, got %d" % len(t)
+assert "x86_64-pep" in lines[t[0]], "binutils: --enable-targets is not the x86 one: %r" % lines[t[0]]
+lines[t[0]] = lines[t[0]].replace("x86_64-pep,", "")
+
+g = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*--enable-gold[ \t]*\\?$", l)]
+assert len(g) == 1, "binutils: expected one --enable-gold line, got %d" % len(g)
+lines[g[0]] = lines[g[0]].replace("--enable-gold", "--disable-gold")
+
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
-grep -q -- "--enable-targets=s390-linux-gnu" PKGBUILD || {
-    echo "binutils: the target list was not translated" >&2; exit 1; }
-grep -q "x86_64-pep" PKGBUILD && {
-    echo "binutils: an x86_64 target survived" >&2; exit 1; }
-echo "binutils: extra targets translated to s390 (gold needs the 32-bit one)"
+grep -q "x86_64-pep" PKGBUILD && { echo "binutils: an x86_64 target survived" >&2; exit 1; }
+grep -q -- "--disable-gold" PKGBUILD || { echo "binutils: gold not disabled" >&2; exit 1; }
+grep -q -- "--enable-gold" PKGBUILD && { echo "binutils: gold still enabled" >&2; exit 1; }
+echo "binutils: gold dropped (its s390 support needs an obsolete target)"
