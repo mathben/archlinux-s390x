@@ -53,3 +53,28 @@ io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
 grep -q -- "-D man=false" PKGBUILD || { echo "p11-kit: man not disabled" >&2; exit 1; }
 echo "p11-kit: man pages disabled (DocBook stylesheets absent, not xsltproc)"
+
+# --- and the gtk-doc split ----------------------------------------------------
+#
+#   mv: cannot stat '<pkgdir>/usr/share/gtk-doc': No such file or directory
+#
+# TWELFTH time. -D gtk_doc=false above stopped the documentation being built and
+# left package() splitting it out:
+#
+#   _pick doc "$pkgdir"/usr/share/gtk-doc
+#
+# _pick is Arch's helper for moving a path into a sub-package, and it is as fatal
+# on a missing path as a bare mv.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if "gtk-doc" in l and "_pick" in l]
+assert len(hit) == 1, "p11-kit: expected one gtk-doc _pick, got %d" % len(hit)
+i = hit[0]
+ind = re.match(r"^[ \t]*", lines[i]).group(0)
+lines[i] = ind + ": # gtk_doc is false above, so usr/share/gtk-doc is never created."
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "_pick doc .*gtk-doc" PKGBUILD && {
+    echo "p11-kit: the gtk-doc pick survived" >&2; exit 1; }
+echo "p11-kit: gtk-doc split removed (nothing builds it now)"
