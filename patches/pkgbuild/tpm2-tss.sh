@@ -29,3 +29,38 @@ grep -q -- "--disable-unit" PKGBUILD || { echo "tpm2-tss: unit tests not disable
 grep -qE "^[[:space:]]*--enable-unit[[:space:]]*$" PKGBUILD && {
     echo "tpm2-tss: --enable-unit survived" >&2; exit 1; }
 echo "tpm2-tss: unit tests disabled (no cmocka)"
+
+# --- and no integration tests -------------------------------------------------
+#
+#   configure: error: Missing required program 'ss': ensure it is installed
+#
+# The THIRD obstacle in this package, each hidden by the one before it: a missing
+# AX_* macro, then cmocka, now `ss`. configure.ac has
+#
+#   [ERROR_IF_NO_PROG([ss])]
+#
+# inside the integration-test branch. `ss` comes from iproute2, and adding
+# iproute2 was the first idea -- it is in Arch's base group and belongs in this
+# distribution eventually. It was MEASURED first: iproute2 depends on libbpf,
+# iptables and linux-atm, none of which are here, and libbpf is the dependency
+# systemd was already spared for the same reason.
+#
+# Three packages to satisfy a test-suite prerequisite, or one flag. The tests are
+# not run: makepkg gets --nocheck for the whole first pass.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+en = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*--enable-integration[ \t]*$", l)]
+if en:
+    lines[en[0]] = lines[en[0]].replace("--enable-integration", "--disable-integration")
+else:
+    # Put it beside the unit-test switch this hook already set.
+    u = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*--disable-unit[ \t]*$", l)]
+    assert len(u) == 1, "tpm2-tss: expected the --disable-unit line from the section above"
+    ind = re.match(r"^[ \t]*", lines[u[0]]).group(0)
+    lines.insert(u[0] + 1, ind + "--disable-integration")
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q -- "--disable-integration" PKGBUILD || {
+    echo "tpm2-tss: integration tests not disabled" >&2; exit 1; }
+echo "tpm2-tss: integration tests disabled (ss would cost three packages)"

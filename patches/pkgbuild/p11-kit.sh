@@ -78,3 +78,29 @@ ZZPY
 grep -qE "_pick doc .*gtk-doc" PKGBUILD && {
     echo "p11-kit: the gtk-doc pick survived" >&2; exit 1; }
 echo "p11-kit: gtk-doc split removed (nothing builds it now)"
+
+# --- and the doc sub-package that now stages nothing --------------------------
+#
+#   mv: cannot stat 'doc/*': No such file or directory
+#
+# THIRTEENTH time, and the third layer of the same package. Neutralising the
+# _pick above stopped anything being staged into doc/, and package_p11-kit-doc()
+# still runs `mv doc/* "$pkgdir"`. _pick, mv, and now the sub-package function
+# that consumes what _pick staged: three places for one decision.
+#
+# The lesson is stated plainly because five of these have been mine: disabling a
+# documentation build means following it through the ENTIRE package() chain --
+# the build flag, the staging, and the sub-package that reads the staging area.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*mv doc/\* ", l)]
+assert len(hit) == 1, "p11-kit: expected one `mv doc/*`, got %d" % len(hit)
+i = hit[0]
+ind = re.match(r"^[ \t]*", lines[i]).group(0)
+lines[i] = ind + ": # nothing is staged into doc/: gtk_doc and man are both off."
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "^[[:space:]]*mv doc/\*" PKGBUILD && {
+    echo "p11-kit: the doc move survived" >&2; exit 1; }
+echo "p11-kit: doc sub-package stages nothing, and no longer tries"
