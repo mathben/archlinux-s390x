@@ -559,6 +559,29 @@ mount_chroot() {
     # rebuild python, which is why this comment says so.
     mountpoint -q "$ROOT/dev/shm" ||
         sudo mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$ROOT/dev/shm"
+    # The MODE, set explicitly and not left to the mount option.
+    #
+    # `-o mode=1777` only applies when this mount is created. The guard above
+    # skips an existing one -- and an existing one may have been mounted without
+    # the option, which is exactly what happened: findmnt showed the tmpfs there
+    # while the directory was drwxr-xr-x, so uid 1000 could create nothing in it.
+    #
+    # That is what CPython's configure actually hit:
+    #
+    #   sem_open: Permission denied
+    #   checking whether POSIX semaphores are enabled... no
+    #
+    # EACCES, not ENOSYS. The port spent a pass reading it as a missing mount and
+    # another as a missing tmpfs, when the mount was present and the mode wrong.
+    sudo chmod 1777 "$ROOT/dev/shm"
+    # And PROVED from inside, as the build user, because every previous check of
+    # this was made as root and passed while the build kept failing.
+    if ! sudo chroot --userspec="$BUILD_UID:$BUILD_GID" "$ROOT" \
+            /usr/bin/env -i PATH=/usr/bin sh -c \
+            'f=/dev/shm/.el-probe.$$; : > "$f" && rm -f "$f"' 2>/dev/null; then
+        printf '  WARNING: /dev/shm is not writable by the build user;\n'
+        printf '           python will build without POSIX semaphores\n'
+    fi
     # Sources and PKGBUILDs, already fetched by stage 1. Bind-mounting them
     # means the chroot needs no network at all, which is worth having: this
     # host cannot reach dev.gnupg.org, and a build that silently re-fetches
