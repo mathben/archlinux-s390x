@@ -23,10 +23,34 @@ import io, re
 lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
 hit = [i for i, l in enumerate(lines) if "LICENSE*" in l and "$_name-$pkgver" in l]
 assert len(hit) == 1, "python-packaging: expected one license install, got %d" % len(hit)
-lines[hit[0]] = lines[hit[0]].replace("$srcdir/$_name-$pkgver/LICENSE*",
-                                      "$srcdir/$pkgname/LICENSE*")
+# BOTH LAYOUTS, because _bootstrap is now a probe rather than a constant
+# (see lib-python-bootstrap.sh). With the vendored builder the sources are git
+# clones under $srcdir/$pkgname; without it they are the release tarball under
+# $srcdir/$_name-$pkgver. Hardcoding either one breaks the other, and the first
+# version of this hook hardcoded the clone -- correct only while _bootstrap was
+# always 1.
+lines[hit[0]] = re.sub(
+    r"\$srcdir/\$_name-\$pkgver/LICENSE\*",
+    '"$srcdir/$pkgname"/LICENSE* "$srcdir/$_name-$pkgver"/LICENSE*',
+    lines[hit[0]])
+# install -t with two globs would fail on whichever does not exist, so the
+# whole line becomes a loop over what is actually there.
+ind = re.match(r"^[ \t]*", lines[hit[0]]).group(0)
+lines[hit[0]:hit[0] + 1] = [
+    ind + '# The sources are a git clone under $pkgname when the vendored builder',
+    ind + '# is used, and the release tarball otherwise. Take whichever exists.',
+    ind + 'for _lic in "$srcdir/$pkgname"/LICENSE* "$srcdir/$_name-$pkgver"/LICENSE*; do',
+    ind + '  [ -f "$_lic" ] && install -vDm644 "$_lic" -t "$pkgdir/usr/share/licenses/$pkgname"',
+    ind + 'done',
+]
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
-grep -q 'srcdir/\$pkgname/LICENSE\*' PKGBUILD || {
-    echo "python-packaging: the license path was not redirected" >&2; exit 1; }
+grep -q 'Take whichever exists' PKGBUILD || {
+    echo "python-packaging: the license loop was not inserted" >&2; exit 1; }
+# Matched against what is actually written -- the inserted line quotes the
+# directory, `"$srcdir/$_name-$pkgver"/LICENSE*`, so a pattern expecting the
+# slash to follow $pkgver directly finds nothing. The first version of this guard
+# did exactly that and failed on a correct file.
+grep -q '_name-\$pkgver"/LICENSE\*' PKGBUILD || {
+    echo "python-packaging: the tarball layout was dropped" >&2; exit 1; }
 echo "python-packaging: license taken from the bootstrap clone"
