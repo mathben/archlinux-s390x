@@ -751,7 +751,7 @@ STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
               python-installer python-setuptools python-wheel
               python-setuptools-scm python-markupsafe python-jinja
               python-pkgconfig cython python-poetry-core
-              python-vcs-versioning python-fastjsonschema)
+              python-vcs-versioning python-fastjsonschema gyp)
 
 # Packages the chroot needs that can only come from repo2.
 #
@@ -813,7 +813,7 @@ CHROOT_STAGE2_PKGS=(
     python-installer python-setuptools python-wheel
     python-setuptools-scm
     python-markupsafe python-jinja python-pkgconfig cython
-    python-poetry-core python-vcs-versioning python-fastjsonschema
+    python-poetry-core python-vcs-versioning python-fastjsonschema gyp
 )
 
 # Packages whose sources must be extracted on the HOST, because the chroot
