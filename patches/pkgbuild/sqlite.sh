@@ -79,3 +79,56 @@ grep -qE '^[[:space:]]*mv .*usr/lib/tcl8\.6/sqlite' PKGBUILD && {
     echo "sqlite: the hardcoded upstream move survived" >&2; exit 1; }
 grep -q '_tcldir=' PKGBUILD || { echo "sqlite: the tcl dir is not discovered" >&2; exit 1; }
 echo "sqlite: upstream tcl move reads the version from the tree"
+
+# --- tcl 9 keeps its library inside the binary -------------------------------
+#
+# The section above discovers whatever tcl directory exists under usr/lib. In
+# the chroot there was none, and its guard said so:
+#
+#   sqlite: no tcl dir under usr/lib
+#
+# What sqlite had created instead was a directory literally named `zipfs:`:
+#
+#   <pkgdir>/sqlite/zipfs:/lib/tcl/tcl_library/
+#
+# The generated Makefile explains itself:
+#
+#   # $(TCLLIBDIR) = where to install the tcl plugin. If this is empty, it
+#   TCLLIBDIR = //zipfs:/lib/tcl/tcl_library/sqlite3.53.4
+#
+# sqlite asks tcl where its library lives and installs the plugin beside it. In
+# tcl 8.6 that was a real directory. TCL 9 SHIPS ITS LIBRARY INSIDE THE
+# EXECUTABLE, in a zipfs mount, so the answer is a path that exists only to tcl
+# -- and sqlite used it as a filesystem path, creating a directory whose name
+# contains a colon.
+#
+# This is the deferred "libtcl8.6 versus our tcl 9.0" item in its final form: not
+# a version number to update but a change in what tcl considers a path.
+#
+# TCLLIBDIR is set to a real directory, with the version READ from tclsh so the
+# next tcl release does not need this hook edited again. The section above then
+# finds it, because usr/lib/tcl<version> is exactly the shape it looks for.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*make\b.*\bsqltclsh\b", l)]
+if not hit:
+    hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*make[ \t]*$", l)]
+assert hit, "sqlite: no make line found in build()"
+i = hit[0]
+ind = re.match(r"^[ \t]*", lines[i]).group(0)
+lines[i:i] = [
+    ind + "# tcl 9 answers with a zipfs path that only tcl can open, and sqlite",
+    ind + "# would install its plugin into a directory named `zipfs:`. Give it a",
+    ind + "# real one, versioned from tclsh rather than written in here.",
+    ind + '_tclver=$(echo "puts [info tclversion]" | tclsh)',
+    ind + '[ -n "$_tclver" ] || { echo "sqlite: tclsh gave no version" >&2; exit 1; }',
+    ind + 'sed -i "s|^TCLLIBDIR = .*|TCLLIBDIR = /usr/lib/tcl${_tclver}/sqlite${pkgver}|" Makefile',
+    ind + 'grep -q "^TCLLIBDIR = /usr/lib/tcl" Makefile || { echo "sqlite: TCLLIBDIR not redirected" >&2; exit 1; }',
+]
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q "TCLLIBDIR = /usr/lib/tcl" PKGBUILD || {
+    echo "sqlite: the TCLLIBDIR redirection was not inserted" >&2; exit 1; }
+echo "sqlite: tcl plugin directed to a real directory (tcl 9 uses zipfs)"
