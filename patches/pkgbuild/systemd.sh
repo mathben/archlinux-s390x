@@ -344,7 +344,16 @@ for i in range(len(lines) - 1, -1, -1):
     l = lines[i]
     if "share/man" not in l and not re.search(r"\bman[0-9]\b", l):
         continue
-    if re.match(r"^[ \t]*mv ", l):
+    # `ln` as well as `mv`. The first version listed mv and rm and missed it, so
+    # package_systemd() got one step further and stopped on
+    #
+    #   ln: failed to create symbolic link '.../man/man8/...'
+    #
+    # a symlink between two man pages where neither exists. Sixteenth instance of
+    # this shape, and the lesson is narrower than the last: the procedure said
+    # grep for the output PATHS, and the paths were found -- what was missed was
+    # a VERB.
+    if re.match(r"^[ \t]*(mv|ln) ", l):
         j = i
         while lines[j].rstrip().endswith("\\"):
             j += 1
@@ -359,8 +368,8 @@ assert rm_n >= 1, "systemd: no man page removals found"
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 print("  %d move(s) neutralised, %d removal(s) made tolerant" % (mv_n, rm_n))
 ZZPY
-grep -qE "^[[:space:]]*mv .*(share/man|\bman[0-9]\b)" PKGBUILD && {
-    echo "systemd: a man page move survived" >&2; exit 1; }
+grep -qE "^[[:space:]]*(mv|ln) .*(share/man|\bman[0-9]\b)" PKGBUILD && {
+    echo "systemd: a man page move or link survived" >&2; exit 1; }
 # Scoped to man paths. The first version of this guard matched any `rm` without
 # a dash and condemned correct code -- systemd's package() removes plenty of
 # things that have nothing to do with documentation. Same mistake as the blanket

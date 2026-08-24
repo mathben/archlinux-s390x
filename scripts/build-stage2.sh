@@ -516,13 +516,32 @@ mount_chroot() {
     # /dev/pts is not optional: without it any build step that opens a pty --
     # and gcc's testsuite driver does -- fails in a way that names the pty and
     # not the missing mount.
-    for m in proc sys dev dev/pts; do
+    for m in proc sys dev dev/pts dev/shm; do
         sudo mkdir -p "$ROOT/$m"
     done
     mountpoint -q "$ROOT/proc"    || sudo mount -t proc  proc  "$ROOT/proc"
     mountpoint -q "$ROOT/sys"     || sudo mount -t sysfs sys   "$ROOT/sys"
     mountpoint -q "$ROOT/dev"     || sudo mount --bind /dev    "$ROOT/dev"
     mountpoint -q "$ROOT/dev/pts" || sudo mount -t devpts devpts "$ROOT/dev/pts"
+    # /dev/shm, for the same reason /dev/pts needs its own line: `mount --bind
+    # /dev` does NOT carry submounts, and both of these are separate mounts on
+    # the host.
+    #
+    # nss failed with
+    #
+    #   ImportError: This platform lacks a functioning sem_open implementation.
+    #   https://github.com/python/cpython/issues/48020
+    #
+    # multiprocessing.Semaphore is built on POSIX named semaphores, which glibc
+    # implements as files under /dev/shm. Without the mount, sem_open returns
+    # ENOSYS and CPython reports it as the PLATFORM lacking the feature -- which
+    # reads like an s390x limitation and is a missing tmpfs.
+    #
+    # A tmpfs of its own rather than a bind: nothing here shares semaphores with
+    # anything outside the chroot. Mode 1777 because unprivileged builds write
+    # into it.
+    mountpoint -q "$ROOT/dev/shm" ||
+        sudo mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$ROOT/dev/shm"
     # Sources and PKGBUILDs, already fetched by stage 1. Bind-mounting them
     # means the chroot needs no network at all, which is worth having: this
     # host cannot reach dev.gnupg.org, and a build that silently re-fetches
@@ -532,7 +551,7 @@ mount_chroot() {
 }
 
 umount_chroot() {
-    for m in repo2 build dev/pts dev sys proc; do
+    for m in repo2 build dev/shm dev/pts dev sys proc; do
         mountpoint -q "$ROOT/$m" && sudo umount -l "$ROOT/$m"
     done
     return 0
