@@ -113,12 +113,34 @@ echo "git: man pages dropped (no asciidoc, four places)"
 python3 - <<'ZZPY'
 import io, re
 lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+# NO_RUST=1, not merely dropping WITH_RUST=1.
+#
+# Removing WITH_RUST=1 changed nothing -- cargo was still invoked:
+#
+#   CARGO target/release/libgitcore.a
+#   /bin/sh: line 1: cargo: command not found
+#
+# The Makefile reads
+#
+#   ifndef NO_RUST
+#   BASIC_CFLAGS += -DWITH_RUST
+#   GITLIBS += $(RUST_LIB)
+#
+# so Rust is built BY DEFAULT and the opt-out is NO_RUST. WITH_RUST=1 in the
+# PKGBUILD sets a variable the Makefile never reads; deleting it was correct and
+# insufficient, which is the worst combination -- the hook reported success and
+# the build failed identically.
+#
+# Worth recording as an upstream change: git now needs a Rust toolchain unless
+# told otherwise. For a distribution bootstrapped from source that is a real
+# obstacle, because rustc bootstraps from a previous rustc.
 hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*WITH_RUST=1[ \t]*$", l)]
 assert len(hit) == 1, "git: expected one WITH_RUST=1 line, got %d" % len(hit)
-del lines[hit[0]]
+lines[hit[0]] = re.match(r"^[ \t]*", lines[hit[0]]).group(0) + "NO_RUST=1"
 out = [l.replace(" 'rust'", "") if "makedepends" in l else l for l in lines]
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(out))
 ZZPY
 grep -qE "^[[:space:]]*WITH_RUST=1" PKGBUILD && { echo "git: WITH_RUST survived" >&2; exit 1; }
+grep -qE "^[[:space:]]*NO_RUST=1" PKGBUILD || { echo "git: NO_RUST=1 was not set" >&2; exit 1; }
 grep -q "'rust'" PKGBUILD && { echo "git: rust still in makedepends" >&2; exit 1; }
 echo "git: built without Rust (no rustc to bootstrap from on s390x)"
