@@ -319,6 +319,16 @@ STAGE1_PACKAGES=(
     # flit_core, setuptools, hatchling and now poetry-core -- each package picks
     # its own, and each one has to exist before that package can be built.
     python-poetry-core
+    # python-vcs-versioning: setuptools-scm was split, and its own build now
+    # imports the half that left:
+    #
+    #   from vcs_versioning import Configuration
+    #   ModuleNotFoundError: No module named 'vcs_versioning'
+    #
+    # The traceback runs through setuptools' build_meta, so the visible error is
+    # "Backend subprocess exited when trying to invoke build_wheel" -- a backend
+    # complaint about a package that split upstream.
+    python-vcs-versioning
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
