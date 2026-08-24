@@ -41,9 +41,22 @@ assert len(hit) == 1, "xz: expected one ./configure line, got %d" % len(hit)
 i = hit[0]
 ind = re.match(r"^[ \t]*", lines[i]).group(0)
 assert lines[i].rstrip().endswith("\\"), "xz: ./configure does not continue"
-lines.insert(i + 1, ind + "  --disable-doc \\")
+# TWO options, not one. --disable-doc was added first and doxygen still ran:
+# the API reference is behind its own automake conditional. The generated
+# Makefile shows it plainly --
+#
+#   @COND_DOXYGEN_TRUE@$(top_builddir)/doc/api/index.html: ...
+#
+# -- with the prefix stripped, so configure had set it true.
+#
+# --disable-doxygen is not in configure's help text; only --enable-doxygen is.
+# It works anyway, and that was CHECKED rather than assumed: AC_ARG_ENABLE
+# always accepts both forms, and `enable_doxygen` is a real variable the script
+# tests. groff taught this the other way round -- there, no such option existed
+# at all, and an invented flag would have drawn a warning and changed nothing.
+lines.insert(i + 1, ind + "  --disable-doc --disable-doxygen \\")
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
-grep -A1 -E "^[[:space:]]*\./configure" PKGBUILD | grep -q -- "--disable-doc" || {
-    echo "xz: --disable-doc is not on the configure line" >&2; exit 1; }
-echo "xz: doxygen API reference disabled"
+grep -A1 -E "^[[:space:]]*\./configure" PKGBUILD | grep -q -- "--disable-doxygen" || {
+    echo "xz: --disable-doxygen is not on the configure line" >&2; exit 1; }
+echo "xz: man pages and doxygen API reference both disabled"
