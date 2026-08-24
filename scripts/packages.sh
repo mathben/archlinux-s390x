@@ -302,6 +302,15 @@ STAGE1_PACKAGES=(
     python-pkgconfig
     cython
     autoconf-archive
+    # publicsuffix-list: DATA, not a tool. libpsl stops on
+    #
+    #   make: *** No rule to make target
+    #     '/usr/share/publicsuffix/effective_tld_names.dat', needed by ...
+    #
+    # It compiles the Public Suffix List into a lookup table, so the list itself
+    # is an input to the build. First entry in this port whose absence is neither
+    # a program nor a library.
+    publicsuffix-list
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
