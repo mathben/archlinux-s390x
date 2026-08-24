@@ -110,11 +110,37 @@ note "2. ARTEFACT -- wrong library directories, which raise no error"
 # as its default libdir, which changed where pkgconf installed, which changed
 # pkgconf's compiled-in search path, which broke every pkg-config lookup in the
 # chroot. One stray .a file at the bottom of that.
+# TWO EXEMPTIONS, each named with its reason, because this check condemned
+# correct packages on its first run against stage 2's output:
+#
+#   python      17 x s390x-linux-gnu/    usr/lib/python3.14/config-3.14-s390x-linux-gnu/
+#                                        usr/lib/python3.14/_sysconfigdata__linux_s390x-linux-gnu.py
+#   filesystem  11 x usr/local/          usr/local/{bin,etc,games,include,...}
+#
+# CPython names those two after the build triplet on EVERY platform -- the Arch
+# x86_64 package ships _sysconfigdata__linux_x86_64-linux-gnu.py -- so the
+# triplet there is CPython's convention, not Debian's layout leaking in. And
+# creating /usr/local's skeleton is what the filesystem package is for; the FHS
+# requires it.
+#
+# Exempted by (package, pattern) pair rather than by package, so python is still
+# checked for lib64 and dist-packages, and filesystem for multiarch. A blanket
+# exemption is how a real leak gets waved through.
+_exempt() {  # _exempt <pkgfile> <pattern>
+    case "$(basename "$1")|$2" in
+        python-3*'|s390x-linux-gnu/')  return 0 ;;
+        filesystem-*'|^usr/local/')    return 0 ;;
+    esac
+    return 1
+}
+
 n=0
 for f in "$REPO"/*.pkg.tar.*; do
     _l=$(bsdtar -tf "$f" 2>/dev/null)
-    c=$(grep -c 's390x-linux-gnu/' <<< "$_l")
-    [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c multiarch paths"; n=$((n + 1)); }
+    if ! _exempt "$f" 's390x-linux-gnu/'; then
+        c=$(grep -c 's390x-linux-gnu/' <<< "$_l")
+        [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c multiarch paths"; n=$((n + 1)); }
+    fi
     c=$(grep -c '^usr/lib64/' <<< "$_l")
     [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/lib64"; n=$((n + 1)); }
     # dist-packages: Debian's name for site-packages.
@@ -134,8 +160,10 @@ for f in "$REPO"/*.pkg.tar.*; do
     [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under dist-packages"; n=$((n + 1)); }
     # usr/local: python's posix_local scheme, and anything else that took the
     # host's idea of where a local install goes.
-    c=$(grep -c '^usr/local/' <<< "$_l")
-    [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/local"; n=$((n + 1)); }
+    if ! _exempt "$f" '^usr/local/'; then
+        c=$(grep -c '^usr/local/' <<< "$_l")
+        [ "$c" -gt 0 ] && { bad "$(basename "$f"): $c paths under usr/local"; n=$((n + 1)); }
+    fi
 done
 [ "$n" -eq 0 ] && good "no multiarch, no lib64, no dist-packages, no usr/local"
 
