@@ -333,6 +333,13 @@ STAGE1_PACKAGES=(
     # schema, so it needs a schema validator to build anything -- including
     # itself. ModuleNotFoundError: No module named 'fastjsonschema'.
     python-fastjsonschema
+    # gyp: nss will not configure without it --
+    #
+    #   Building NSS requires an installation of gyp: https://gyp.gsrc.io
+    #
+    # Google's build-file generator, which nss uses to produce its ninja files.
+    # A Python program, so it goes with the rest of the Python set.
+    gyp
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
