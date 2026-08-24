@@ -145,6 +145,24 @@ SigLevel = Never
 [core]
 Server = file://$REPO1
 EOF
+    # NOTHING MAY BE MOUNTED UNDER $ROOT WHEN THIS RUNS.
+    #
+    # `rm -rf` follows a bind mount and deletes what is on the other side. This
+    # function had no such guard, and the cost was the host's /dev: a diagnostic
+    # session left `mount --rbind /dev "$ROOT/dev"` in place, the next run wiped
+    # the rootfs, and the delete went through the mount into the real /dev. Every
+    # device node went -- zero, full, random, urandom, tty, console -- and
+    # /dev/null came back later as a regular file created by a redirection, which
+    # broke every `> /dev/null` on the machine.
+    #
+    # Two guards, because the first one is not enough: unmount, then CHECK, then
+    # refuse. A stale mount is a reason to stop, never a thing to delete through.
+    umount_chroot
+    if findmnt -rno TARGET | grep -qF "$ROOT/"; then
+        printf 'still mounted under %s:\n' "$ROOT" >&2
+        findmnt -rno TARGET | grep -F "$ROOT/" | sed 's/^/  /' >&2
+        die "refusing to rm -rf through a mount"
+    fi
     sudo rm -rf "$ROOT" "$CACHE"
     sudo mkdir -p "$ROOT/var/lib/pacman" "$CACHE"
     # EVERYTHING in stage 1, not a hand-picked core.
@@ -516,71 +534,41 @@ mount_chroot() {
     # /dev/pts is not optional: without it any build step that opens a pty --
     # and gcc's testsuite driver does -- fails in a way that names the pty and
     # not the missing mount.
-    for m in proc sys dev dev/pts dev/shm; do
+    for m in proc sys dev; do
         sudo mkdir -p "$ROOT/$m"
     done
     mountpoint -q "$ROOT/proc"    || sudo mount -t proc  proc  "$ROOT/proc"
     mountpoint -q "$ROOT/sys"     || sudo mount -t sysfs sys   "$ROOT/sys"
-    mountpoint -q "$ROOT/dev"     || sudo mount --bind /dev    "$ROOT/dev"
-    mountpoint -q "$ROOT/dev/pts" || sudo mount -t devpts devpts "$ROOT/dev/pts"
-    # /dev/shm, for the same reason /dev/pts needs its own line: `mount --bind
-    # /dev` does NOT carry submounts, and both of these are separate mounts on
-    # the host.
+    # /dev by --rbind, then --make-rslave. Not a plain --bind, and nothing under
+    # it is ever modified.
     #
-    # nss failed with
+    # A plain --bind does NOT carry submounts, so the chroot saw /dev/shm as the
+    # empty 0755 stub inside devtmpfs rather than the host's tmpfs. That cost
+    # three passes: CPython runs sem_open at configure time, got EACCES, decided
+    # the platform has no POSIX semaphores, and compiled _multiprocessing without
+    # SemLock -- after which every consumer failed with a message blaming the
+    # platform, days after the cause.
     #
-    #   ImportError: This platform lacks a functioning sem_open implementation.
-    #   https://github.com/python/cpython/issues/48020
+    # The first fix mounted a separate tmpfs at $ROOT/dev/shm and chmod'ed it.
+    # That was wrong in a way worth recording: $ROOT/dev was a bind of the HOST's
+    # /dev, so writes under it reach the real /dev -- and the host's /dev/null
+    # ended up replaced by a regular file, which broke every redirection on the
+    # machine until it was recreated with mknod.
     #
-    # multiprocessing.Semaphore is built on POSIX named semaphores, which glibc
-    # implements as files under /dev/shm. Without the mount, sem_open returns
-    # ENOSYS and CPython reports it as the PLATFORM lacking the feature -- which
-    # reads like an s390x limitation and is a missing tmpfs.
-    #
-    # A tmpfs of its own rather than a bind: nothing here shares semaphores with
-    # anything outside the chroot. Mode 1777 because unprivileged builds write
-    # into it.
-    #
-    # AND IT MUST BE HERE BEFORE PYTHON IS BUILT. Mounting it later does not
-    # help: CPython's configure runs sem_open at BUILD time, and with no /dev/shm
-    # it concluded the platform has no working semaphores --
-    #
-    #   POSIX_SEMAPHORES_NOT_ENABLED: 1     (in _sysconfigdata__*.py)
-    #   HAVE_SEM_OPEN: 1                    (the function exists)
-    #
-    # -- and compiled _multiprocessing without SemLock. Any package that imports
-    # multiprocessing then fails permanently, with a message blaming the
-    # platform:
-    #
-    #   ImportError: This platform lacks a functioning sem_open implementation.
-    #
-    # nss is the one that found it. A python built in a chroot without this mount
-    # stays broken however many times the consumer is retried; the fix is to
-    # rebuild python, which is why this comment says so.
-    mountpoint -q "$ROOT/dev/shm" ||
-        sudo mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$ROOT/dev/shm"
-    # The MODE, set explicitly and not left to the mount option.
-    #
-    # `-o mode=1777` only applies when this mount is created. The guard above
-    # skips an existing one -- and an existing one may have been mounted without
-    # the option, which is exactly what happened: findmnt showed the tmpfs there
-    # while the directory was drwxr-xr-x, so uid 1000 could create nothing in it.
-    #
-    # That is what CPython's configure actually hit:
-    #
-    #   sem_open: Permission denied
-    #   checking whether POSIX semaphores are enabled... no
-    #
-    # EACCES, not ENOSYS. The port spent a pass reading it as a missing mount and
-    # another as a missing tmpfs, when the mount was present and the mode wrong.
-    sudo chmod 1777 "$ROOT/dev/shm"
-    # And PROVED from inside, as the build user, because every previous check of
-    # this was made as root and passed while the build kept failing.
+    # --rbind brings the host's /dev/shm along as it is: already a tmpfs, already
+    # drwxrwxrwt. Nothing to create, nothing to chmod, nothing of the host's to
+    # touch. --make-rslave then stops any mount this chroot makes from
+    # propagating back out.
+    mountpoint -q "$ROOT/dev" || {
+        sudo mount --rbind /dev "$ROOT/dev"
+        sudo mount --make-rslave "$ROOT/dev"
+    }
+    # PROVED from inside, as the build user. Every earlier check of this was made
+    # as root and passed while the build kept failing.
     if ! sudo chroot --userspec="$BUILD_UID:$BUILD_GID" "$ROOT" \
             /usr/bin/env -i PATH=/usr/bin sh -c \
-            'f=/dev/shm/.el-probe.$$; : > "$f" && rm -f "$f"' 2>/dev/null; then
-        printf '  WARNING: /dev/shm is not writable by the build user;\n'
-        printf '           python will build without POSIX semaphores\n'
+            'f=/dev/shm/.el-probe.$$; : > "$f" && rm -f "$f"'; then
+        die "/dev/shm is not writable by the build user; python would build without POSIX semaphores"
     fi
     # Sources and PKGBUILDs, already fetched by stage 1. Bind-mounting them
     # means the chroot needs no network at all, which is worth having: this
@@ -591,7 +579,9 @@ mount_chroot() {
 }
 
 umount_chroot() {
-    for m in repo2 build dev/shm dev/pts dev sys proc; do
+    # -R for dev, because --rbind brought its submounts with it.
+    mountpoint -q "$ROOT/dev" && sudo umount -R -l "$ROOT/dev"
+    for m in repo2 build sys proc; do
         mountpoint -q "$ROOT/$m" && sudo umount -l "$ROOT/$m"
     done
     return 0
