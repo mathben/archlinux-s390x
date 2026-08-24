@@ -329,6 +329,10 @@ STAGE1_PACKAGES=(
     # "Backend subprocess exited when trying to invoke build_wheel" -- a backend
     # complaint about a package that split upstream.
     python-vcs-versioning
+    # python-fastjsonschema: poetry-core validates pyproject.toml against a JSON
+    # schema, so it needs a schema validator to build anything -- including
+    # itself. ModuleNotFoundError: No module named 'fastjsonschema'.
+    python-fastjsonschema
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory

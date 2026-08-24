@@ -149,3 +149,54 @@ grep -q "x86_64-pep" PKGBUILD && { echo "binutils: an x86_64 target survived" >&
 grep -q -- "--disable-gold" PKGBUILD || { echo "binutils: gold not disabled" >&2; exit 1; }
 grep -q -- "--enable-gold" PKGBUILD && { echo "binutils: gold still enabled" >&2; exit 1; }
 echo "binutils: gold dropped (its s390 support needs an obsolete target)"
+
+# --- libiberty still records a usr/lib64 path ---------------------------------
+#
+# --libdir=/usr/lib above is not enough. pacman refused to install the result:
+#
+#   binutils: <root>/usr/lib64 exists in filesystem (owned by filesystem)
+#   binutils: <root>/usr/lib64/libiberty.a exists in filesystem
+#
+# libiberty installs into $(libdir)$(MULTIOSSUBDIR), and on s390x gcc reports
+# ../lib64 for -print-multi-os-directory. In the INSTALLED system that resolves
+# through the symlink the filesystem package now provides, so the file lands in
+# /usr/lib -- but pkgdir has no such symlink, so make creates a real
+# pkg/usr/lib64/ and makepkg records `usr/lib64/libiberty.a` as the package's
+# own path. Installing it then collides with the symlink.
+#
+# The two fixes are not alternatives: filesystem's symlink is what keeps meson
+# and cmake choosing lib, and this moves the one file that still writes through
+# the multi-os subdirectory. Done in package(), on pkgdir, so nothing depends on
+# the order the two packages are installed in.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+# The last package function is where pkgdir is complete.
+# package(), not package_binutils(). binutils is NOT a split package here --
+# pkgname=binutils, one function -- and the first version of this assumed the
+# split form and asserted its way out. Both shapes are in this port; a hook has
+# to look.
+hit = [i for i, l in enumerate(lines) if re.match(r"^package(_binutils)?\(\)", l)]
+assert len(hit) == 1, "binutils: expected one package function, got %d" % len(hit)
+# Find that function's closing brace.
+i = hit[0] + 1
+while i < len(lines) and lines[i] != "}":
+    i += 1
+assert i < len(lines), "binutils: package_binutils() has no closing brace"
+lines[i:i] = [
+    "",
+    "  # libiberty writes through gcc's multi-os subdirectory (../lib64 on",
+    "  # s390x). In the installed system usr/lib64 is a symlink to lib, but pkgdir",
+    "  # has no symlink, so the path is recorded literally and collides with the",
+    "  # filesystem package. Move it to where it resolves to anyway.",
+    '  if [ -d "$pkgdir/usr/lib64" ]; then',
+    '    install -d "$pkgdir/usr/lib"',
+    '    mv "$pkgdir"/usr/lib64/* "$pkgdir/usr/lib/"',
+    '    rmdir "$pkgdir/usr/lib64"',
+    '  fi',
+]
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -q 'rmdir "\$pkgdir/usr/lib64"' PKGBUILD || {
+    echo "binutils: the lib64 move was not inserted" >&2; exit 1; }
+echo "binutils: libiberty moved out of usr/lib64"

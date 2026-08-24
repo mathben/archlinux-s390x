@@ -110,3 +110,26 @@ ZZPY
 grep -qE "^[[:space:]]*--sphinx-" PKGBUILD && {
     echo "cmake: a --sphinx flag survived" >&2; exit 1; }
 echo "cmake: Sphinx manual and man pages dropped"
+
+# --- and the html it no longer generates --------------------------------------
+#
+#   rm: cannot remove '<pkgdir>/usr/share/doc/cmake/html/_sources': No such file
+#
+# ELEVENTH time in this port. With Sphinx off, cmake generates no html, and the
+# PKGBUILD deletes _sources from it -- Sphinx leaves the reStructuredText inputs
+# beside the rendered pages and they are not wanted in a package.
+#
+# rm -rf rather than deleted: on a machine with Sphinx the directory is real and
+# still has to go.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if "_sources" in l and l.lstrip().startswith("rm ")]
+assert len(hit) == 1, "cmake: expected one _sources removal, got %d" % len(hit)
+i = hit[0]
+lines[i] = lines[i].replace("rm -r ", "rm -rf ", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "^[[:space:]]*rm -rf .*_sources" PKGBUILD || {
+    echo "cmake: the _sources removal was not made tolerant" >&2; exit 1; }
+echo "cmake: _sources cleanup tolerates its absence"
