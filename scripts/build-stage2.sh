@@ -221,6 +221,19 @@ EOF
     # invocation, so resuming has to be correct rather than approximately
     # correct.
     #
+    # --nodeps TWICE, which is not a typo. pacman documents it: `-d` skips
+    # dependency VERSION checks, `-dd` skips dependency checks entirely. With
+    # one, cython could not be installed --
+    #
+    #   warning: cannot resolve "python-pygments", a dependency of "cython"
+    #   :: unable to satisfy dependency 'python-numpy' required by cython
+    #
+    # -- and the numbers matter: cython is wanted here only as a BUILD tool for
+    # libseccomp's Python binding, and its declared runtime dependencies are
+    # numpy and pygments. numpy brings BLAS and LAPACK. A single -d looked like
+    # it was skipping dependencies and was only skipping their versions, which
+    # nearly bought an entire numerical stack to compile one .pyx file.
+    #
     # --nodeps for the same reason the per-package install uses it: a chroot
     # halfway through stage 2 is a mixed population, some packages declaring
     # versioned soname dependencies and some declaring names. -U is fed the
@@ -284,7 +297,7 @@ EOF
     fi
     if [ "${#back[@]}" -gt 0 ]; then
         sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
-            --noconfirm --nodeps -U "${back[@]}" \
+            --noconfirm --nodeps --nodeps -U "${back[@]}" \
             > "$WORK/stage2-restore.txt" 2>&1 \
             || { tail -20 "$WORK/stage2-restore.txt" >&2; die "restoring stage-2 output failed"; }
         printf '  %s stage-2 package(s) restored\n' "${#back[@]}"
@@ -737,7 +750,7 @@ STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
               python-packaging python-pyproject-hooks python-build
               python-installer python-setuptools python-wheel
               python-setuptools-scm python-markupsafe python-jinja
-              python-pkgconfig cython)
+              python-pkgconfig cython python-poetry-core)
 
 # Packages the chroot needs that can only come from repo2.
 #
@@ -799,6 +812,7 @@ CHROOT_STAGE2_PKGS=(
     python-installer python-setuptools python-wheel
     python-setuptools-scm
     python-markupsafe python-jinja python-pkgconfig cython
+    python-poetry-core
 )
 
 # Packages whose sources must be extracted on the HOST, because the chroot
@@ -1012,7 +1026,7 @@ stage2_build() {
         return 0
     fi
     sudo pacman --root "$ROOT" --config "$CONF2" --cachedir "$CACHE" \
-        --noconfirm --nodeps -U "${keep[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
+        --noconfirm --nodeps --nodeps -U "${keep[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
         tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
     printf '  installed %s package(s)\n' "${#produced[@]}"
 

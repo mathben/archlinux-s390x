@@ -311,6 +311,14 @@ STAGE1_PACKAGES=(
     # is an input to the build. First entry in this port whose absence is neither
     # a program nor a library.
     publicsuffix-list
+    # python-poetry-core: the fourth Python build backend this port has needed.
+    # python-pkgconfig stops on
+    #
+    #   ERROR Backend 'poetry.core.masonry.api' is not available.
+    #
+    # flit_core, setuptools, hatchling and now poetry-core -- each package picks
+    # its own, and each one has to exist before that package can be built.
+    python-poetry-core
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
