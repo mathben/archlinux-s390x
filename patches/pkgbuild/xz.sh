@@ -23,40 +23,41 @@ echo "xz: translated man pages skipped"
 
 # --- and no doxygen API reference ---------------------------------------------
 #
-# With po4a out of the way, the build got as far as
+# Two documentation toolchains in one package: po4a above for the translated man
+# pages, doxygen for the liblzma API reference.
 #
 #   ../../../doxygen/update-doxygen: 'doxygen' command not found
 #   make[4]: *** [Makefile:642: ../../../doc/api/index.html] Error 1
 #
-# Two documentation toolchains in one package: po4a for the translated man pages,
-# doxygen for the liblzma API reference. --disable-doc is xz's own switch, and it
-# was checked in configure before use -- both --disable-doc and --enable-doc are
-# there.
+# THE FLAG WAS ALREADY THERE, AND LOST. The first version of this section
+# inserted --disable-doxygen right after ./configure, and config.log recorded what
+# actually happened:
+#
+#   $ ./configure --disable-doc --disable-doxygen --prefix=/usr \
+#       --disable-rpath --enable-doxygen --enable-werror
+#
+# The PKGBUILD passes --enable-doxygen further along the same line, and autoconf
+# takes the LAST occurrence. The port had already learned this from the other
+# side -- the arch-meson wrapper APPENDS --auto-features auto precisely so it
+# wins -- and this got it backwards.
+#
+# The existing option is flipped in place rather than a second one added. One
+# statement per decision: two contradictory flags on one command line is how the
+# next reader spends an hour in config.log.
+#
+# Note for later: --enable-werror is on that same line. It has not bitten yet.
 set -euo pipefail
 python3 - <<'ZZPY'
 import io, re
 lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
-hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*\./configure[ \t]*\\\\?$", l)]
-assert len(hit) == 1, "xz: expected one ./configure line, got %d" % len(hit)
-i = hit[0]
-ind = re.match(r"^[ \t]*", lines[i]).group(0)
-assert lines[i].rstrip().endswith("\\"), "xz: ./configure does not continue"
-# TWO options, not one. --disable-doc was added first and doxygen still ran:
-# the API reference is behind its own automake conditional. The generated
-# Makefile shows it plainly --
-#
-#   @COND_DOXYGEN_TRUE@$(top_builddir)/doc/api/index.html: ...
-#
-# -- with the prefix stripped, so configure had set it true.
-#
-# --disable-doxygen is not in configure's help text; only --enable-doxygen is.
-# It works anyway, and that was CHECKED rather than assumed: AC_ARG_ENABLE
-# always accepts both forms, and `enable_doxygen` is a real variable the script
-# tests. groff taught this the other way round -- there, no such option existed
-# at all, and an invented flag would have drawn a warning and changed nothing.
-lines.insert(i + 1, ind + "  --disable-doc --disable-doxygen \\")
+hit = [i for i, l in enumerate(lines) if re.search(r"--enable-doxygen\b", l)]
+assert len(hit) == 1, "xz: expected one --enable-doxygen, got %d" % len(hit)
+lines[hit[0]] = lines[hit[0]].replace("--enable-doxygen", "--disable-doxygen")
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
-grep -A1 -E "^[[:space:]]*\./configure" PKGBUILD | grep -q -- "--disable-doxygen" || {
-    echo "xz: --disable-doxygen is not on the configure line" >&2; exit 1; }
-echo "xz: man pages and doxygen API reference both disabled"
+grep -q -- "--enable-doxygen" PKGBUILD && { echo "xz: --enable-doxygen survived" >&2; exit 1; }
+grep -q -- "--disable-doxygen" PKGBUILD || { echo "xz: doxygen not disabled" >&2; exit 1; }
+# One occurrence only: a line carrying both would be decided by position.
+n=$(grep -c -- "--disable-doxygen" PKGBUILD)
+[ "$n" = 1 ] || { echo "xz: expected 1 --disable-doxygen, found $n" >&2; exit 1; }
+echo "xz: doxygen disabled by flipping the flag the PKGBUILD already passes"
