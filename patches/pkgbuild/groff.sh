@@ -36,6 +36,19 @@ lines[i:i] = [
     ind + "# package. The install side already skips the file when it is absent.",
     ind + 'sed -i "s|^DOC_GNU_EPS = doc/gnu.eps$|DOC_GNU_EPS =|" Makefile',
     ind + 'grep -q "^DOC_GNU_EPS =$" Makefile',
+    ind + "# And its CONSUMER. Emptying DOC_GNU_EPS removed the rule that",
+    ind + "# builds the figure and not the document that includes it:",
+    ind + "#",
+    ind + "#   doc/webpage.ms:45: error: cannot open 'gnu.eps'",
+    ind + "#   doc/webpage.ms:45: fatal error: PSPIC failed to include 'gnu.eps'",
+    ind + "#",
+    ind + "# PROCESSEDEXAMPLEFILES_PS lists webpage.ps and grnexmpl.ps. The",
+    ind + "# HTML variant right above it is ALREADY empty, with its real value",
+    ind + "# left as a comment -- groff's own configure empties that one when",
+    ind + "# the tools are missing. This does the same for PS, which is the",
+    ind + "# decision groff would have made had it checked.",
+    ind + 'sed -i "/^PROCESSEDEXAMPLEFILES_PS = /,/^$/ s|^.*$||" Makefile',
+    ind + 'grep -q "^PROCESSEDEXAMPLEFILES_PS" Makefile && { echo "groff: PS example list not emptied" >&2; exit 1; }',
 ]
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
 ZZPY
