@@ -340,6 +340,29 @@ STAGE1_PACKAGES=(
     # Google's build-file generator, which nss uses to produce its ninja files.
     # A Python program, so it goes with the rest of the Python set.
     gyp
+    # --- Rust, and what it needs ---------------------------------------------
+    #
+    # NOT optional, and that was measured rather than assumed. ERPLibre's
+    # poetry.lock requires cryptography 46.0.5 with optional = false, plus jiter,
+    # orjson, pydantic-core and rpds-py -- all of which build Rust from source
+    # where no wheel exists, and none exists for s390x. Without Rust,
+    # `pip install cryptography` fails and ERPLibre does not start.
+    #
+    # The bootstrap cycle is not the obstacle it looks like: rust-1.90.0 ships an
+    # official s390x-unknown-linux-gnu tarball (verified, HTTP 200) and the host
+    # already carries rustc 1.85.1. What costs is llvm and clang, which Arch's
+    # rust lists as makedepends.
+    #
+    # libedit and python-psutil are all llvm and clang need beyond what is
+    # already here -- Sphinx is disabled by their hooks, which removes some
+    # fifteen documentation packages from the bill.
+    libedit
+    # python-psutil is a stage-2 package: built on the host it shipped 41
+    # dist-packages paths, like every Python package whose install path comes
+    # from the running interpreter. The ARTEFACT check caught it.
+    python-psutil
+    llvm
+    clang
     # libaio: a real closure gap. lvm2 stops on
     #
     #   device/bcache.c:30:10: fatal error: libaio.h: No such file or directory
