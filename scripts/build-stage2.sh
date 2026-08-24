@@ -540,6 +540,23 @@ mount_chroot() {
     # A tmpfs of its own rather than a bind: nothing here shares semaphores with
     # anything outside the chroot. Mode 1777 because unprivileged builds write
     # into it.
+    #
+    # AND IT MUST BE HERE BEFORE PYTHON IS BUILT. Mounting it later does not
+    # help: CPython's configure runs sem_open at BUILD time, and with no /dev/shm
+    # it concluded the platform has no working semaphores --
+    #
+    #   POSIX_SEMAPHORES_NOT_ENABLED: 1     (in _sysconfigdata__*.py)
+    #   HAVE_SEM_OPEN: 1                    (the function exists)
+    #
+    # -- and compiled _multiprocessing without SemLock. Any package that imports
+    # multiprocessing then fails permanently, with a message blaming the
+    # platform:
+    #
+    #   ImportError: This platform lacks a functioning sem_open implementation.
+    #
+    # nss is the one that found it. A python built in a chroot without this mount
+    # stays broken however many times the consumer is retried; the fix is to
+    # rebuild python, which is why this comment says so.
     mountpoint -q "$ROOT/dev/shm" ||
         sudo mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$ROOT/dev/shm"
     # Sources and PKGBUILDs, already fetched by stage 1. Bind-mounting them
