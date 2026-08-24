@@ -286,3 +286,26 @@ io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 ZZPY
 grep -q -- "-Dapparmor=disabled" PKGBUILD || { echo "systemd: apparmor not disabled" >&2; exit 1; }
 echo "systemd: AppArmor disabled"
+
+# --- no man pages -------------------------------------------------------------
+#
+#   compilation error: file ../systemd/man/custom-man.xsl line 12 element import
+#
+# An XSLT import that cannot resolve: systemd renders its man pages from DocBook,
+# and the stylesheets its own custom-man.xsl imports are not installed. xsltproc
+# exists -- our libxslt supplies it -- so this is the FOURTH package to stop on
+# missing DocBook DATA rather than a missing tool, after pam, shadow and p11-kit.
+#
+# systemd has by far the largest man page set of any package here, which is the
+# strongest argument in the port for shipping docbook-xsl eventually. Not now.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "-Dman=enabled"
+assert s.count(old) == 1, "systemd: expected one man option, got %d" % s.count(old)
+s = s.replace(old, "-Dman=disabled", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q -- "-Dman=disabled" PKGBUILD || { echo "systemd: man not disabled" >&2; exit 1; }
+echo "systemd: man pages disabled (DocBook stylesheets absent, not xsltproc)"

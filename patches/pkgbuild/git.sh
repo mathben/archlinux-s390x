@@ -144,3 +144,56 @@ grep -qE "^[[:space:]]*WITH_RUST=1" PKGBUILD && { echo "git: WITH_RUST survived"
 grep -qE "^[[:space:]]*NO_RUST=1" PKGBUILD || { echo "git: NO_RUST=1 was not set" >&2; exit 1; }
 grep -q "'rust'" PKGBUILD && { echo "git: rust still in makedepends" >&2; exit 1; }
 echo "git: built without Rust (no rustc to bootstrap from on s390x)"
+
+# --- no libsecret credential helper -------------------------------------------
+#
+#   make: *** [Makefile:20: git-credential-libsecret.o] Error 1
+#
+# contrib/credential/libsecret needs libsecret's headers, and libsecret is not in
+# this port -- it is a GNOME keyring client, and behind it sit glib2 and
+# gobject-introspection, the sub-project already declined for p11-kit.
+#
+# THREE PLACES, and one of them spans two lines:
+#
+#   52   _make -C contrib/credential/libsecret
+#   106  install -m 0755 contrib/credential/libsecret/git-credential-libsecret \
+#   107      "$pkgdir"/usr/lib/git-core/git-credential-libsecret
+#   108  _make -C contrib/credential/libsecret clean
+#
+# The first version of this section asserted "expected one _make, got 2" and
+# stopped, which is the guard doing its job. Replacing line 106 alone would leave
+# 107 as a command of its own -- the binutils continuation trap again, and the
+# reason the install is deleted as a range rather than commented.
+#
+# The optdepend line stays: it describes what the helper would need if someone
+# built it, and it is a sentence, not a dependency.
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+
+mk = [i for i, l in enumerate(lines)
+      if re.search(r"_make -C contrib/credential/libsecret", l)]
+assert len(mk) == 2, "git: expected two libsecret _make lines, got %d" % len(mk)
+
+ins = [i for i, l in enumerate(lines)
+       if re.match(r"^[ \t]*install ", l) and "credential/libsecret" in l]
+assert len(ins) == 1, "git: expected one libsecret install, got %d" % len(ins)
+i = ins[0]
+j = i
+while lines[j].rstrip().endswith("\\"):
+    j += 1
+# Delete the install and its continuations, then neutralise both _make lines.
+# Backwards, so earlier indices stay valid.
+for k in reversed(mk):
+    ind = re.match(r"^[ \t]*", lines[k]).group(0)
+    lines[k] = ind + ": # libsecret is not packaged here (glib2, gobject-introspection)."
+del lines[i:j + 1]
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "^[[:space:]]*_make -C contrib/credential/libsecret" PKGBUILD && {
+    echo "git: a libsecret build survived" >&2; exit 1; }
+grep -qE "^[[:space:]]*install .*credential/libsecret" PKGBUILD && {
+    echo "git: the libsecret install survived" >&2; exit 1; }
+grep -q "git-credential-libsecret" PKGBUILD && {
+    echo "git: a reference to the helper binary survived" >&2; exit 1; }
+echo "git: libsecret credential helper dropped"
