@@ -82,3 +82,31 @@ sed -n '/^makedepends=(/,/)/p' PKGBUILD | grep -qw emacs && {
 grep -q 'cmake-mode' PKGBUILD && {
     echo "cmake: a cmake-mode reference remains -- check it is harmless" >&2; }
 echo "cmake: emacs byte-compilation dropped (the .el is installed regardless)"
+
+# --- no Sphinx documentation ---------------------------------------------------
+#
+#   CMake Error at Utilities/Sphinx/CMakeLists.txt:52 (message):
+#
+# cmake builds its own manual and man pages with Sphinx, requested by
+# --sphinx-man and --sphinx-html in the bootstrap arguments. python-sphinx is not
+# in this port: it is a large Python documentation stack, and cmake is wanted here
+# as a build tool.
+#
+# BOTH FLAGS, and they are bootstrap arguments rather than -D options -- cmake
+# configures itself with its own script before it can run itself. Dropping only
+# one leaves the other pulling Sphinx in, and the error is identical, which is how
+# a half-fix looks like no fix.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+hit = [i for i, l in enumerate(lines) if re.match(r"^[ \t]*--sphinx-(man|html)[ \t]*\\\\?$", l)]
+assert len(hit) == 2, "cmake: expected two --sphinx flags, got %d" % len(hit)
+# Backwards: deleting shifts everything after it.
+for i in reversed(hit):
+    del lines[i]
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+ZZPY
+grep -qE "^[[:space:]]*--sphinx-" PKGBUILD && {
+    echo "cmake: a --sphinx flag survived" >&2; exit 1; }
+echo "cmake: Sphinx manual and man pages dropped"
