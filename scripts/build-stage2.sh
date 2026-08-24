@@ -962,6 +962,32 @@ stage2_build() {
     if host_extract "$name"; then
         echo "  extracting on the host (chroot bsdtar not usable yet)"
         ( cd "$dir" && LC_ALL=C.UTF-8 makepkg $mkflags -o -C -f ) || return 1
+        # Symlinks that point out of the chroot.
+        #
+        # nss failed with
+        #
+        #   /build/nss/PKGBUILD: line 55: ../certdata2pem.py:
+        #     No such file or directory
+        #
+        # on a file that was plainly there. makepkg links a PKGBUILD's local
+        # source files into srcdir, and having extracted on the HOST it wrote the
+        # host's absolute path -- $WORK/pkg/nss/certdata2pem.py. Inside the
+        # chroot that path does not exist; only /build does. "No such file or
+        # directory" for an executable is usually its interpreter, which sent the
+        # first guess to the shebang; here it was the script itself, reached
+        # through a link to nowhere.
+        #
+        # Rewritten to the same file as the chroot sees it. Only links under
+        # $WORK/pkg are touched -- a link to anywhere else was not made by this
+        # mechanism and is not ours to redirect.
+        local _l _t _n=0
+        while IFS= read -r _l; do
+            _t=$(readlink "$_l")
+            case "$_t" in
+                "$WORK/pkg"/*) ln -sfn "/build/${_t#"$WORK/pkg/"}" "$_l"; _n=$((_n + 1)) ;;
+            esac
+        done < <(find "$dir/src" -maxdepth 2 -type l 2>/dev/null)
+        [ "$_n" -gt 0 ] && printf '  %s source link(s) repointed at /build\n' "$_n"
         # -e: build in the tree already there. -C would wipe it again.
         in_chroot "cd /build/$name && makepkg $mkflags -e -f" || return 1
     else
