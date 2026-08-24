@@ -309,3 +309,62 @@ io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 ZZPY
 grep -q -- "-Dman=disabled" PKGBUILD || { echo "systemd: man not disabled" >&2; exit 1; }
 echo "systemd: man pages disabled (DocBook stylesheets absent, not xsltproc)"
+
+# --- and every man page operation in package() --------------------------------
+#
+#   mv: cannot stat '<pkgdir>/usr/share/man/man3': No such file or directory
+#
+# FIFTEENTH time, and the first where the whole class was handled at once instead
+# of one path per pass. -Dman=disabled means NO man pages exist, and package()
+# touches them six times:
+#
+#   mv .../man/man3 systemd-libs/man3
+#   mv .../man/man8/*nss* systemd-libs/man8/
+#   mv .../man/man1/ukify.1 systemd-ukify/man1/
+#   rm .../man/man1/init.1
+#   rm .../man/man8/{halt,poweroff,reboot,shutdown}.8
+#   rm .../usr/{bin/resolvconf,share/man/man1/resolvconf.1}
+#
+# Treated by KIND rather than by name:
+#
+#   mv  -- neutralised. These move pages into split packages, and with no pages
+#          there is nothing to move and the split simply has no man section.
+#   rm  -- made tolerant with -f. These delete pages Arch does not want shipped,
+#          and that intent still holds on a machine that HAS the DocBook stack.
+#          The last one also removes a binary, which must still go.
+#
+# This is the procedure written in jsoncpp's hook, applied before the failures
+# arrive rather than after: grep package() for the output paths, not the tool.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io, re
+lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
+mv_n = rm_n = 0
+for i in range(len(lines) - 1, -1, -1):
+    l = lines[i]
+    if "share/man" not in l and not re.search(r"\bman[0-9]\b", l):
+        continue
+    if re.match(r"^[ \t]*mv ", l):
+        j = i
+        while lines[j].rstrip().endswith("\\"):
+            j += 1
+        ind = re.match(r"^[ \t]*", l).group(0)
+        lines[i:j + 1] = [ind + ": # no man pages are built: -Dman=disabled above."]
+        mv_n += 1
+    elif re.match(r"^[ \t]*rm ", l) and not re.match(r"^[ \t]*rm -[a-z]*f", l):
+        lines[i] = re.sub(r"^([ \t]*)rm ", r"\1rm -f ", l)
+        rm_n += 1
+assert mv_n >= 1, "systemd: no man page moves found"
+assert rm_n >= 1, "systemd: no man page removals found"
+io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
+print("  %d move(s) neutralised, %d removal(s) made tolerant" % (mv_n, rm_n))
+ZZPY
+grep -qE "^[[:space:]]*mv .*(share/man|\bman[0-9]\b)" PKGBUILD && {
+    echo "systemd: a man page move survived" >&2; exit 1; }
+# Scoped to man paths. The first version of this guard matched any `rm` without
+# a dash and condemned correct code -- systemd's package() removes plenty of
+# things that have nothing to do with documentation. Same mistake as the blanket
+# `grep tcl8.6` in sqlite's hook: a check must ask about what it changed.
+grep -qE "^[[:space:]]*rm [^-].*(share/man|\bman[0-9]\b)" PKGBUILD && {
+    echo "systemd: an intolerant rm of a man path survived" >&2; exit 1; }
+echo "systemd: all man page operations handled"
