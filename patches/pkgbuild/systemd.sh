@@ -310,70 +310,71 @@ ZZPY
 grep -q -- "-Dman=disabled" PKGBUILD || { echo "systemd: man not disabled" >&2; exit 1; }
 echo "systemd: man pages disabled (DocBook stylesheets absent, not xsltproc)"
 
-# --- and every man page operation in package() --------------------------------
+# --- and every man page operation, in every sub-package -----------------------
 #
-#   mv: cannot stat '<pkgdir>/usr/share/man/man3': No such file or directory
+# -Dman=disabled means NO man page exists, and package() touches them SIXTEEN
+# times across five sub-package functions. This section was written three times,
+# each catching more:
 #
-# FIFTEENTH time, and the first where the whole class was handled at once instead
-# of one path per pass. -Dman=disabled means NO man pages exist, and package()
-# touches them six times:
+#   1st  man3 only                     -> stopped on man8/*nss*
+#   2nd  mv and rm of share/man paths  -> stopped on `ln -s ... installkernel.8.gz`
+#   3rd  mv, ln and rm                 -> stopped on
 #
-#   mv .../man/man3 systemd-libs/man3
-#   mv .../man/man8/*nss* systemd-libs/man8/
-#   mv .../man/man1/ukify.1 systemd-ukify/man1/
-#   rm .../man/man1/init.1
-#   rm .../man/man8/{halt,poweroff,reboot,shutdown}.8
-#   rm .../usr/{bin/resolvconf,share/man/man1/resolvconf.1}
+#          install -D -m0644 -t "$pkgdir"/usr/share/man/man1 \
+#            build/man/init.1
 #
-# Treated by KIND rather than by name:
+#        in package_systemd-sysvcompat(), whose SOURCE is under build/ and whose
+#        path contains no "man<digit>" component at all.
 #
-#   mv  -- neutralised. These move pages into split packages, and with no pages
-#          there is nothing to move and the split simply has no man section.
-#   rm  -- made tolerant with -f. These delete pages Arch does not want shipped,
-#          and that intent still holds on a machine that HAS the DocBook stack.
-#          The last one also removes a binary, which must still go.
+# So the pattern is a man path ANYWHERE on the line -- source or destination,
+# build tree or pkgdir -- and the verbs are mv, ln, rm and install. Treated by
+# kind:
 #
-# This is the procedure written in jsoncpp's hook, applied before the failures
-# arrive rather than after: grep package() for the output paths, not the tool.
+#   mv, ln, install  neutralised. Nothing exists to move, link or install.
+#   rm               made tolerant with -f. Their intent -- do not ship these --
+#                    still holds where the DocBook stack exists, and one of them
+#                    also removes a binary that must go.
+#   install -d       LEFT ALONE. Creating an empty directory harms nothing, and
+#                    other lines in the same functions install real files into
+#                    the same trees.
+#
+# Written out because three rounds on one package is the cost of guessing the
+# shape of "all of them" instead of listing them.
 set -euo pipefail
 python3 - <<'ZZPY'
 import io, re
 lines = io.open("PKGBUILD", encoding="utf-8").read().split("\n")
-mv_n = rm_n = 0
+MAN = re.compile(r"(share/man|build/man|\bman[1-8]\b|\bman[1-8]/)")
+neutral = tolerant = 0
 for i in range(len(lines) - 1, -1, -1):
     l = lines[i]
-    if "share/man" not in l and not re.search(r"\bman[0-9]\b", l):
+    if not MAN.search(l):
         continue
-    # `ln` as well as `mv`. The first version listed mv and rm and missed it, so
-    # package_systemd() got one step further and stopped on
-    #
-    #   ln: failed to create symbolic link '.../man/man8/...'
-    #
-    # a symlink between two man pages where neither exists. Sixteenth instance of
-    # this shape, and the lesson is narrower than the last: the procedure said
-    # grep for the output PATHS, and the paths were found -- what was missed was
-    # a VERB.
-    if re.match(r"^[ \t]*(mv|ln) ", l):
+    # install -d only makes a directory; leave it.
+    if re.match(r"^[ \t]*install +-d", l):
+        continue
+    if re.match(r"^[ \t]*(mv|ln|install) ", l):
         j = i
         while lines[j].rstrip().endswith("\\"):
             j += 1
         ind = re.match(r"^[ \t]*", l).group(0)
         lines[i:j + 1] = [ind + ": # no man pages are built: -Dman=disabled above."]
-        mv_n += 1
+        neutral += 1
     elif re.match(r"^[ \t]*rm ", l) and not re.match(r"^[ \t]*rm -[a-z]*f", l):
         lines[i] = re.sub(r"^([ \t]*)rm ", r"\1rm -f ", l)
-        rm_n += 1
-assert mv_n >= 1, "systemd: no man page moves found"
-assert rm_n >= 1, "systemd: no man page removals found"
+        tolerant += 1
+assert neutral >= 5, "systemd: expected at least five man operations, got %d" % neutral
+assert tolerant >= 1, "systemd: no man page removals found"
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
-print("  %d move(s) neutralised, %d removal(s) made tolerant" % (mv_n, rm_n))
+print("  %d neutralised, %d made tolerant" % (neutral, tolerant))
 ZZPY
-grep -qE "^[[:space:]]*(mv|ln) .*(share/man|\bman[0-9]\b)" PKGBUILD && {
-    echo "systemd: a man page move or link survived" >&2; exit 1; }
-# Scoped to man paths. The first version of this guard matched any `rm` without
-# a dash and condemned correct code -- systemd's package() removes plenty of
-# things that have nothing to do with documentation. Same mistake as the blanket
-# `grep tcl8.6` in sqlite's hook: a check must ask about what it changed.
-grep -qE "^[[:space:]]*rm [^-].*(share/man|\bman[0-9]\b)" PKGBUILD && {
+# Nothing may still act on a man path except `install -d` and a tolerant rm.
+if grep -nE "^[[:space:]]*(mv|ln|install) .*(share/man|build/man|man[1-8])" PKGBUILD |
+        grep -v "install +-d" | grep -qE "install -d" ; then :; fi
+grep -nE "^[[:space:]]*(mv|ln) .*(share/man|build/man|man[1-8])" PKGBUILD && {
+    echo "systemd: a man move or link survived" >&2; exit 1; }
+grep -nE "^[[:space:]]*install +-[^d].*(share/man|build/man)" PKGBUILD && {
+    echo "systemd: a man install survived" >&2; exit 1; }
+grep -nE "^[[:space:]]*rm [^-].*(share/man|man[1-8])" PKGBUILD && {
     echo "systemd: an intolerant rm of a man path survived" >&2; exit 1; }
-echo "systemd: all man page operations handled"
+echo "systemd: all man page operations handled, in every sub-package"
