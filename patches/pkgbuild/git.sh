@@ -197,3 +197,44 @@ grep -qE "^[[:space:]]*install .*credential/libsecret" PKGBUILD && {
 grep -q "git-credential-libsecret" PKGBUILD && {
     echo "git: a reference to the helper binary survived" >&2; exit 1; }
 echo "git: libsecret credential helper dropped"
+
+# git-zsh-completion, AND THE SHELL IT NEEDS.
+#
+# The pkgbase produces a second package whose only content is a symlink into
+# /usr/share/zsh, and which therefore depends on zsh. This port has no zsh and
+# wants none: a completion file for a shell nobody can run is a dependency
+# without a use.
+#
+# It was found by the stage-2 RESOLVE check on its first run -- the repository
+# had carried the hole since git was first built, and populating a chroot never
+# showed it because pacman skips the package as an alternative. A resolver
+# asked the right question in one second.
+python3 - <<'ZZPY'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+
+old = "pkgname=(git git-zsh-completion)"
+new = "pkgname=(git)"
+assert s.count(old) == 1, "git: tableau pkgname introuvable"
+s = s.replace(old, new, 1)
+
+# La fonction entiere, jusqu a l accolade en colonne 1.
+m = re.search(r"\npackage_git-zsh-completion\(\) \{.*?\n\}\n", s, re.S)
+assert m, "git: package_git-zsh-completion() introuvable"
+s = s[: m.start()] + "\n" + s[m.end():]
+
+# L optdepends qui annonce un paquet qui n existera plus.
+old = "    'git-zsh-completion: upstream zsh completion'\n"
+assert s.count(old) == 1, "git: optdepends zsh introuvable"
+s = s.replace(old, "", 1)
+
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q "^package_git-zsh-completion" PKGBUILD && {
+    echo "git: package_git-zsh-completion survit" >&2; exit 1; }
+grep -q "git-zsh-completion" PKGBUILD && {
+    echo "git: une reference a git-zsh-completion survit" >&2; exit 1; }
+grep -q "^pkgname=(git)" PKGBUILD || {
+    echo "git: pkgname n a pas ete reduit" >&2; exit 1; }
+echo "git: git-zsh-completion retire, zsh avec"
+

@@ -243,6 +243,417 @@ distribution is *compiled*. gcc's `--with-arch` says what the compiler we
 *ship* assumes when someone builds on the target with no flags at all. Setting
 only the first leaves a gcc that quietly reverts to arch5.
 
+### The kernel — `patches/pkgbuild/linux.sh`
+
+Arch builds one kernel package for one architecture, and every assumption that
+follows from that is in this hook.
+
+**The config is generated, not committed.** prepare() copies `config.$CARCH`,
+Arch ships only `config.x86_64`, and a five-thousand-line file nobody here
+could review would be worse than none. So the hook runs `make defconfig` over
+`arch/s390/configs/defconfig`, enables the seventeen symbols a systemd guest
+needs on top, and then ASSERTS each one against the FINAL `.config`. The
+assertion is not decoration: `CONFIG_VIRTIO_CCW` does not exist, and
+`drivers/s390/virtio/Makefile` builds virtio_ccw.o under `CONFIG_S390_GUEST`.
+An `--enable` for a symbol Kconfig never heard of is a silent no-op, and the
+price of not checking is one whole boot.
+
+**`karch` is a directory name, and the map has one entry.**
+package_linux-headers() translates CARCH into the `arch/` subdirectory it
+copies and knows only `x86_64 -> x86`; s390x reaches `Unknown CARCH s390x`
+AFTER the kernel has finished building. Same per-architecture hook as
+`config.$CARCH` and rust's bootstrap toml, third appearance.
+
+**The `initramfs` dependency goes.** It is a virtual package, provided by
+mkinitcpio or dracut, and this port builds neither -- nor needs one: ext4,
+virtio-blk and the CCW transport are built in, which is exactly what the
+assertions above guarantee. Left in place it is unsatisfiable, and pacman
+refuses the entire transaction rather than the one dependency.
+
+**BINFMT_MISC is enabled although nothing here executes a foreign format.**
+systemd mounts proc-sys-fs-binfmt_misc and reports the system `degraded` when
+it cannot. A failed unit should mean something the day a real one appears.
+
+**htmldocs and the BTF header go, with their consumers** -- `linux-docs` leaves
+pkgname, `vmlinux.h` leaves linux-headers. Deferred like the rest of the
+documentation: Sphinx is the tree this port has refused since llvm.
+
+### cloud-init, and what a closure cannot see — `scripts/packages.sh`
+
+Thirty packages. Twenty-two were computed: the PKGBUILDs were read by bash and
+their `depends` followed until a pass added nothing, four passes deep. The
+other eight appeared one at a time, from builds that failed, and every one of
+them was a BUILD dependency -- a closure over `depends` cannot see those, and a
+closure over `makedepends` drags in Sphinx, TeX Live and Qt, which is why it is
+not the answer either.
+
+What they taught is how an absence announces itself, which is rarely by name:
+
+    Missing dependencies: calver          trove-classifiers, plainly
+    Unknown version source: vcs           hatch-vcs, as a plugin error
+    Cannot import 'maturin'               a build backend, not a library
+    could not read Username for gitlab    the repository does not exist
+    Dependency "bash-completion" not found  meson, at configure time
+
+The git one cost the most: Arch packages python-yaml and PROVIDES
+python-pyyaml, so asking for the provided name gets a password prompt rather
+than a 404 — and, because nothing was ever read about python-yaml itself,
+libyaml went missing too, one layer further down.
+
+**The units matter as much as the package.** Arch ships cloud-init's four
+units disabled. An image with the package and without them reads no seed at
+all, and a deployment that applied nothing looks exactly like a deployment that
+was ignored. `build-image.sh` takes `EL_CLOUD_INIT=1` and enables all four.
+
+### Two images, and only one of them is generic — `scripts/build-erplibre-image.sh`
+
+`build-image.sh` makes an Arch s390x that boots and can be logged into: the
+COMMUNITY image, which a deployment then names, keys and hands an address. The
+other one is ERPLibre already installed -- CPython 3.12.10 compiled by pyenv,
+the wheels built, the database initialised, odoo a systemd unit -- and it is
+made by driving the first: boot it, run provision-erplibre.sh over ssh, shut it
+down.
+
+**A booted guest, not a chroot.** provision-erplibre.sh starts units and reads
+back /web/login over HTTP. A chroot has no PID 1 and shares the host's network,
+so what it proves is not what a deployed machine does.
+
+**AND THE IDENTITY COMES BACK OUT.** Everything installed is meant to be
+identical on every copy; what identifies a MACHINE is not. ssh host keys leave,
+so every deployment does not present the same fingerprint; machine-id is
+emptied rather than deleted, which is how systemd is told to mint a new one at
+first boot -- the journal and the DHCP client identifier both derive from it.
+The build key leaves too: whoever deploys the image brings their own.
+
+The database, the Python environment and the cloned sources STAY. They are the
+product, and regenerating them is the hour this script spends once.
+
+**Watching a remote job from outside is where this bites.** Asking the guest
+whether the provisioning script still runs, by looking for its name in /proc,
+answers yes forever: the ssh command carrying the question has that name in its
+own command line and matches itself. The script's exit status is appended to
+its log instead. That mistake was made five times in one session before it was
+written down.
+
+### The image was built by hand — `scripts/build-image.sh`
+
+An image nobody can rebuild is an image that exists once. The first one was a
+mkfs, a mount, a `pacman --root` and a dozen edits under /etc typed one at a
+time; the script is that sequence, with the fifty-one packages read back out of
+the running image with `pacman -Qqe` rather than remembered.
+
+Three things it refuses to invent: a root password, a public key, and a
+repository address. Each comes from the environment or the image ships without
+it -- an image carrying a password somebody else chose is worse than one with
+none, and it would be committed the day the script is.
+
+**What DHCP does not bring.** networkd learns the nameserver and writes it
+where resolved reads it, and nothing writes /etc/resolv.conf. Without that
+symlink the guest has addresses and no names: `Could not resolve host` on the
+first git clone, on a machine whose network is otherwise working.
+
+**To close:** nothing here, but the image still boots a kernel handed to it
+from outside -- see the entry above.
+
+### A guest with no repository — `scripts/serve-repo.sh`
+
+No Arch mirror publishes s390x, so a guest installed from this port boots with
+an EMPTY mirrorlist. pacman runs and can do nothing: `no servers configured for
+repository`, for every install, every upgrade, every dependency. It is not a
+broken pacman, it is a machine with nowhere to look, and an Arch machine that
+cannot install a package is not administrable.
+
+The repository is served over HTTP from the host that built it, bound to the
+libvirt NAT bridge, which its own guests and nothing else can reach.
+`scripts/setup-guest-pacman.sh` is the other half, run inside the guest.
+
+**STAGE 2 ONLY, AND NEVER STAGE 1.** Stage-1 packages were compiled against
+Ubuntu's libraries -- dissolving that is the entire purpose of stage 2. Serving
+them to a target would put the contamination back one package at a time. A
+package the guest needs and stage 2 does not have is a package to BUILD.
+
+~~**`SigLevel = Never` on that repository.**~~ **It is signed** --
+`scripts/sign-repo.sh`. Not with archlinux-keyring, which would be an apparatus
+of verification over packages Arch's developers never signed, but with a key
+this port generates and keeps: 277 detached signatures, the database signed
+too, and the public key served beside the packages.
+`setup-guest-pacman.sh --verify` takes it into pacman's own keyring, signs it
+LOCALLY -- pacman trusts a key the local keyring has signed, not one that is
+merely present -- and raises SigLevel to `Required DatabaseRequired`.
+`build-image.sh` does the same with `EL_VERIFY_REPO=1`.
+
+Proven by taking a signature away: with the `.sig` moved aside, `pacman -S`
+stops on a 404 and installs nothing; put back, the same command installs.
+
+**What the key proves, and what it does not.** It has no passphrase -- two
+hundred and seventy-seven signatures cannot each wait for a human, and a build
+interrupted mid-signing leaves a repository in two states. So it proves a
+package was built on this host and reached the guest unaltered. It does not
+prove that nobody with an account on that host made it. The private key lives
+under the work directory and never in git, where a signing key would be a
+published key.
+
+**A message that lied.** After SigLevel is raised, the database already in
+/var/lib/pacman/sync was fetched when it was still Never, so it has no
+signature beside it. pacman refuses it, re-downloads it, and succeeds -- having
+printed `error: core: missing required signature` about a configuration that
+was correct. The stale database is now removed before the sync, because an
+error that appears when everything works teaches the reader to ignore errors.
+
+### sudo and base-devel — the deployment's needs are not the chroot's
+
+`packages.sh` refuses sudo for the build chroot and is right to: makepkg wants
+it only for `--syncdeps`, which `--nodeps` replaces, so it would be a setuid
+binary for no reason. That reasoning ends at the target. Every Arch guide, and
+ERPLibre's own installer, is written as `sudo pacman -S --needed`; a machine
+administrable only by logging in as root is not a deployment. Same argument
+that admitted openssh.
+
+`base-devel` stopped being a group in 2023 and is a meta package now, which is
+why `pacman -Sg base-devel` reports that no such group exists. It compiles
+nothing and names what a build machine needs. Two of its dependencies are not
+here, and they are different kinds of absence:
+
+- **debugedit is built** -- `patches/pkgbuild/debugedit.sh`. Its configure
+  ABORTS without gdb-add-index, a tool that belongs to find-debuginfo and not
+  to debugedit itself; gdb would drag in guile and source-highlight, and
+  source-highlight boost. The abort becomes a warning. What is lost is exact:
+  debug packages carry no gdb index.
+- **archlinux-keyring is removed** -- `patches/pkgbuild/base-devel.sh`. It
+  ships the PGP keys of Arch's developers, and not one package on this system
+  was signed by them. Installing it would put a verification apparatus on a
+  system where nothing is verified, which is worse than the gap it hides.
+
+### What ERPLibre's Arch installer assumed — measured in a guest
+
+`script/install/install_arch_linux.sh` stopped the whole installation on
+`error: target not found: tk`, because tk sat on a critical pacman line and
+pacman refuses an entire transaction over one unknown name. The same shape
+waited two blocks below, where a missing nodejs `exit 1`s although everything
+the script then does with node is already optional in its own error paths.
+
+Both were argued from ERPLibre's own tree rather than from this port's
+convenience: tk has two importers, one wrapping it in `try:` and one assuming a
+browser and a screen; rtlcss builds right-to-left stylesheets and less compiles
+LESS, which Odoo 18 replaced with libsass in Python. Neither is a server
+dependency, and building tk here would mean tcl and a dozen X11 packages so
+that a headless machine can open a file dialog.
+
+**Closed ERPLibre-side**, not here: both moved to the best-effort loop the
+script already had. The installer now reaches
+`Arch Linux dependency installation done` on s390x.
+
+### The first PKGBUILD this port writes itself — `pkgbuild/s390-tools/`
+
+Every other package is Arch's, fetched and patched, and that is what keeps the
+port a set of differences rather than a fork. It cannot cover a tool Arch has
+no reason to package: zipl exists only on this architecture, so there is
+nothing to clone and nothing to diff against. `build-stage2.sh` copies a
+PKGBUILD from `pkgbuild/<name>/` when one is there, and copying is deliberately
+NOT a fallback for a failed clone -- a network error would then quietly build
+something other than what the name says.
+
+Only zipl is built out of s390-tools' forty-odd tools. The rest drive DASD
+volumes, zFCP adapters, crypto cards and HMC consoles: hardware a guest does
+not have.
+
+**Two things it taught, both about paths.** The Makefiles create the directory
+of every tool whether it was built or not, and one of those is `/usr/lib64` --
+a SYMLINK here, provided by filesystem, so pacman refuses the package outright.
+And zipl reading its config asks the kernel for the geometry of the device
+under /boot, which a loop device does not answer: at build time it is invoked
+with `--target*` instead, declaring the geometry rather than asking for it.
+
+### ~~The guest boots a kernel that is not in its filesystem~~ — it IPLs now
+
+The domain carried `<kernel>`, a file on the host, because a z guest boots from
+a record zipl writes and zipl was not built. `pacman -Syu linux` in the guest
+then changed what the IMAGE held and not what the next boot RAN; a libvirt hook
+papered over it by re-reading the kernel at every start.
+
+zipl is built, `build-image.sh` writes the boot record, and the domain has no
+`<kernel>` at all -- the hook is removed rather than left running over a file
+nothing reads. Verified from a console that shows the guest's own loader:
+
+    Using virtio-blk.
+    Kernel command line: root=/dev/vda rw console=ttysclp0
+
+That command line comes from the image's zipl.conf, which is how one can tell
+the disk booted itself. A redefinition keeps the domain's uuid and MAC, so
+re-running the installer no longer moves the guest to another address.
+
+### libvirt-qemu needs one ACL to reach the image — `scripts/install-libvirt-domain.sh`
+
+qemu runs as libvirt-qemu, and a home directory is 0750, so a domain cannot
+open an image that lives in a work tree -- it cannot even traverse the
+directory. `setfacl -m u:libvirt-qemu:x` on that one directory grants traversal
+and not read, which is the smallest thing that works. The alternative is moving
+a 24 GB image under /var/lib/libvirt, a tree that belongs to other work on the
+host.
+
+**To close:** nothing, unless the image acquires a home of its own.
+
+### Stage 3, and the closure stage 2 never had — `STAGE_N`
+
+Stage 3 is stage 2 pointed at itself: the chroot is populated from `repo2`
+alone, the result lands in `repo3`, and the port is self-hosting when the two
+agree. It needs no second script -- `STAGE_N=3` moves every path, and the four
+hooks that read `EL_STAGE` only ask whether it is 1.
+
+**The chroot compiles.** Eleven of eleven, gcc 16.2.1 and binutils 2.47 with
+not one binary that was ever linked against Ubuntu. That is half of what
+self-hosting means.
+
+**What it found in the first minutes**, which is what a third stage is for:
+
+- **Seven Python packaging tools were inherited, not declared.** setuptools is
+  built with setuptools; at stage 2 it was there because stage 1 had left it
+  and the restore put it back. A chroot made only of stage 2 starts without it
+  and says `Cannot import 'setuptools.build_meta'`. They are named in
+  CHROOT_PKGS now, like rsync before them.
+- **The logs were named `stage2-log-*` whatever the stage**, so stage 3
+  overwrote the very evidence a comparison would need. Ten paths, plus a FAIL
+  message that pointed at an eleventh file that no longer existed.
+- ~~**repo2 IS NOT CLOSED.**~~ **It is now**: 278 packages install together
+  into an empty chroot, no fallback, and the chroot builds. Six holes, not
+  five -- closing one opened another:
+
+      pahole               <- linux-headers   built
+      python-lark-parser   <- poetry-core     built
+      python-pygments      <- cython          built, minus sphinx
+      compiler-rt          <- clang           built, minus a bad assumption
+      python-numpy         <- cython          dropped: cblas and lapack behind it
+      python-matplotlib    <- ostra-cg        the sub-package goes instead
+
+  Four of the six were missing for want of looking: pahole needs libelf and
+  zlib, lark needs typing_extensions, pygments needs nothing. Only numpy and
+  matplotlib were refused, both for the tree behind them, and in each case the
+  cheaper half was kept -- pygments is built although numpy is not, and pahole
+  is built although ostra-cg is not.
+
+  **compiler-rt was not a missing package but a wrong assumption.** llvm-libc
+  decides a platform has 128-bit complex if EITHER `__STDC_IEC_60559_COMPLEX__`
+  or `__SIZEOF_FLOAT128__` is defined. On s390x the first is true and the
+  second is not: the arithmetic exists, reached through `long double`, while
+  `__float128` is an x86 spelling. The typedef then asks for a type nothing
+  declares. Requiring the second alone lets the file's own third branch --
+  `LDBL_MANT_DIG == 113` -> complex long double -- describe this architecture
+  correctly. Upstream's condition is wrong for every machine like it.
+
+  This was failure shape two, the one `--nodeps` makes possible. Stage 1 has a
+  RESOLVE test for it and stage 2 never got one, so six holes sat there until a
+  third stage tried to populate a chroot from stage 2 alone.
+
+**Closed by a check, not by vigilance.** `resolve_check()` runs at the end of
+every stage-2 pass: it asks pacman's own resolver whether everything in the
+repository installs together, which is the question `--nodeps` stops anyone
+from asking during the build. On its FIRST run it found a seventh hole nobody
+had seen -- `git-zsh-completion` depends on zsh, which this port does not
+build. Populating a chroot had never shown it, because pacman skips that
+package as an alternative; the resolver, asked directly, named it in one
+second.
+
+The sub-package goes, like ostra-cg before it: a completion file for a shell
+nobody can run is a dependency without a use. Verified after: `280 packages
+resolve`.
+
+Two things worth keeping from this. A check placed where the work happens
+reports in seconds what a check somebody must remember to run reported one
+stage late. And **closing a hole can open one** -- pahole brought ostra-cg,
+which brought matplotlib -- so the check runs AFTER the pass, on what was just
+built, not on what was expected.
+
+### What stage 3 answered: 263 identical, 13 explained
+
+228 of 231 packages rebuilt by the port's own toolchain, in a chroot holding
+nothing that Ubuntu ever compiled. `compare-stages.sh` then read the two
+repositories side by side: **263 packages identical**, thirteen different, and
+not one of the thirteen is a contamination or a regression. They fall into
+three groups.
+
+**Stage 3 produces MORE, because its chroot holds more.** glibc gains its info
+pages, util-linux its 124 bash completions, dbus its HTML documentation and man
+pages, debuginfod its binary. Stage 2 built these inside a chroot populated
+from stage 1 -- a deliberately narrow set -- and the missing tools made each
+package quietly configure a smaller version of itself. Stage 3 populates from
+the WHOLE of repo2, so texinfo, bash-completion and the rest are simply there.
+bash-completion in particular was built today for cloud-init and reaches
+util-linux by accident of being present.
+
+That is not a defect to fix. It is the measurement saying that a package's
+content depends on what surrounded its build, which is the thing a bootstrap
+spends its life trying to control.
+
+**Two versions carry a build date.** setuptools is `80.9.0.post20260821` on one
+side and a later date on the other; meson the same. A package whose version
+embeds the day it was built cannot be identical across two days, and nothing
+can be done about it from here.
+
+**cython declares numpy on one side.** Stage 3 built it before the hook that
+removes that dependency existed. It will agree on the next pass -- a stale
+artefact, not a difference between the stages.
+
+**What this does and does not establish.** The toolchain reproduces itself:
+glibc and gcc are among the 263. What is not yet established is a stage 3 built
+in the same conditions as stage 2, which is what would make the comparison
+answer a sharper question. Closing that means populating both chroots
+identically -- and the honest way to do it is to give stage 2 the richer chroot,
+not to impoverish stage 3.
+
+**Three packages were never rebuilt**: rust (its build tree reached 19 GB and
+filled the disk), libaio (its source is gone -- see the shape above), and
+autoconf-archive (a GNU mirror answering 502 that afternoon).
+
+### A fifth failure shape: the source itself goes away
+
+The three original shapes are about a package's dependencies, the fourth about
+what a failed run leaves behind. This one is about the SOURCE, and stage 3 is
+where it appears, because stage 3 rebuilds what stage 2 already built once:
+
+    libaio: curl: (22) The requested URL returned error: 404
+            https://pagure.io/libaio/archive/libaio-0.3.113/...tar.gz
+
+The package sits in repo2 -- it was built when that URL answered. pagure.io is
+still up (200 on the project page) and simply no longer generates archives at
+that path. Arch has already moved to another spelling of it, at pkgrel 5; that
+one returns 404 as well.
+
+**Pinning protects reproducibility and freezes a URL at the same time.**
+upstream.lock holds libaio at the commit that names a path which has ceased to
+exist. The pin is doing exactly its job, and the job has stopped being enough.
+
+**The Debian source is NOT the same file.** libaio_0.3.113.orig.tar.gz is
+served, 49 980 bytes, and its sha512 does not match the one the PKGBUILD
+carries. Substituting it and moving on would be borrowing a stranger's tarball
+under a name that promises otherwise -- especially here, where builds run with
+integrity checks off and nothing downstream would notice.
+
+**To close: a local mirror of the sources.** Every tarball this port has ever
+built from, kept beside the packages it produced. Not for speed -- for the day
+an upstream reorganises, which has now happened once and will happen again. A
+port whose sources live only on other people's servers is reproducible only for
+as long as those servers agree.
+
+Until then libaio can be installed and cannot be rebuilt, which is worth
+knowing before someone counts on stage 3 being complete.
+
+### A fourth failure shape: an interrupted download outlives the run
+
+The three shapes above are about what a package needs. This one is about what
+an earlier run left on disk. A kernel tarball stopped at 54 of 158 MB, and the
+next run reported
+
+    -> Found linux-7.1.10.tar.xz
+    linux-7.1.10/Documentation/arch/x86/resume.svg: Truncated tar archive
+
+because makepkg runs here with integrity checks off -- the patches this port
+generates can never match upstream checksums -- so a short file IS the file.
+The download error is in one log and the extraction error in the next, and they
+name different things, which is what makes this shape worth naming.
+
+**To close:** nothing to restore. A partial source is deleted, not built on top
+of; `xz -t` answers in a second what a rebuild answers in fifteen minutes.
+
 ### A third failure shape: the host is behind
 
 Contamination and closure gaps were the two known kinds. libxslt is neither:
@@ -301,6 +712,23 @@ defaults is already the right one. Until then, pin rather than hope.
 
 ---
 
+### python-psutil has no test verdict -- `patches/pkgbuild/python-psutil.sh`
+
+Its check() stops on `No module named pytest`, and pytest here is not one
+package: python-pytest wants python-iniconfig, python-pluggy and
+python-pygments, and python-pygments makedepends on python-sphinx,
+python-hatchling and python-wcag-contrast-ratio. That is the same Sphinx tree
+the llvm and clang hooks refused, reached by another road -- and iniconfig and
+pluggy carry python-pytest in their OWN checkdepends, so it is circular as well
+as large. checkdepends also name net-tools and procps-ng.
+
+The build is untouched: the wheel is produced and packaged. And nothing here
+needs the verdict -- llvm ran 68603 of its own tests at stage 2 without psutil
+installed, and RESOLVE passes with the package absent from the repository.
+
+**To close:** build the pytest chain when something else asks for it, and put
+check() back.
+
 ### Documentation is skipped in the stage-2 chroot — `scripts/build-stage2.sh`
 
 Our own meson package ships `/usr/bin/arch-meson`, and it passes
@@ -327,6 +755,19 @@ the other eight stand Ruby, ImageMagick and a GNOME stack. Several times the
 size of everything built so far, for man pages.
 
 To restore at stage 3, once there is somewhere to build them from.
+
+**One exception, measured the same way and landing the other side of it.** The
+four packages that lost man pages to DocBook -- pam, shadow, p11-kit, systemd
+-- were never missing a TOOL: xsltproc is built here. They were missing DTDs
+and stylesheets, and those are docbook-xml and docbook-xsl: zipped data, a few
+xmlcatalog calls, arch=(any) for one of them, no compiler behind either. Both
+are in the list now, straight after libxml2. It is also why postgresql needs no
+hook -- `make world` builds its manuals from SGML, and now it can.
+
+Note what they are NOT: converters. The `EXPAT_BUILD_DOCS` probe in expat
+switches on when `docbook2man` and its siblings appear on PATH, which is how
+expat began failing 29 hours after asciidoc pulled docbook-utils onto the host.
+Data does not trip that probe, and nothing in these two packages lands on PATH.
 
 ### The docs split assumed the docs exist — `patches/pkgbuild/libxml2.sh`
 
@@ -407,6 +848,28 @@ carry closures much larger than themselves (`dtrace` brings systemtap,
 `sphinx-build` a Python stack), and paying for one before knowing it is needed
 is how a bootstrap doubles in size.
 
+### Never edit a script while it is running -- bash reads it as it goes
+
+The stage-2 run that built llvm and clang ended on
+
+    scripts/build-stage2.sh: line 1211: syntax error near unexpected token `fi'
+
+after printing `2 rebuilt, 0 failed`. The file was fine -- `bash -n` passes.
+What happened is that CHROOT_STAGE2_PKGS was edited while the script was
+executing, and bash does not read a script into memory: it reads from a byte
+OFFSET in the open file. Inserting three lines near the top shifted everything
+after them, and when bash next read at its saved offset it landed mid-statement.
+
+Nothing was lost here: the summary had printed, repo-add had run, the database
+holds all 214 packages, and umount_chroot had already finished -- `findmnt`
+shows nothing under rootfs-stage2. That last one is luck worth naming, because
+a script killed BEFORE its unmount is exactly the state that let an earlier
+`rm -rf` walk through a bind mount into the host /dev.
+
+**The rule:** while a build is running, edit anything except the scripts that
+are running. TODO.md, hooks not yet read, packages.sh for a future run -- all
+fine. build-stage2.sh, bootstrap-pacman.sh -- wait.
+
 ## Environment, not the port
 
 ### Build locale — `scripts/bootstrap-pacman.sh`
@@ -465,3 +928,131 @@ expects the classic layout. Symlinks bridge it.
 
 **To close:** stage 2 builds inside an Arch root, where the layout is
 already right.
+
+## What ERPLibre still needs -- measured, from its own installer
+
+`script/install/install_arch_linux.sh` in the ERPLibre tree is the authority
+here, not a guess: it is the list ERPLibre itself installs on Arch. Checked
+against repo and repo2.
+
+Critical and missing: **postgresql**. Everything else the installer treats as
+critical is already built -- git, wget, curl, openssl, zlib, xz, bzip2,
+readline, sqlite, libffi.
+
+**nodejs and npm are on that list and are not the answer either.** Read what
+the installer does with them: `npm install -g rtlcss less`, and an `npm
+install` for prettier -- and it marks both `(optionnel)` in their own error
+paths. rtlcss builds right-to-left stylesheets; less compiles LESS, which Odoo
+stopped using. Odoo 18 compiles its SCSS in Python: `libsass = "0.22.0"` sits
+in ERPLibre pyproject.toml, and nothing in addons/ calls rtlcss.
+
+The cost, if it were needed: nodejs is configured `--shared-` against ada,
+c-ares, nghttp2, nghttp3, ngtcp2 and simdjson, none of which this port builds,
+and npm wants jq. Eight packages for a stylesheet transform no one here runs.
+
+What is real is narrower: the installer `exit 1`s if pacman cannot install
+nodejs, even though everything it then does with it is optional. That is an
+ERPLibre-side line to soften, not eight packages to build.
+
+**To close:** build the shared libraries when something needs Node, or make
+the installer treat nodejs the way it already treats what it installs with it.
+
+**tk is on that list and is NOT one of the three.** The installer names it
+among the pyenv build dependencies, where it means one thing: CPython builds
+tkinter. Grepping the ERPLibre tree finds exactly two importers -- kdbx_manager.py,
+which wraps the import in `try:` and does without, and selenium_lib.py, a test
+helper that already assumes a browser and a screen. Neither runs a server.
+
+Building it is not one package either: tk wants tcl and the X11 stack under it
+-- xorgproto, libxau, libxdmcp, libxcb, libx11, libxext, libxrender, libxft,
+fontconfig. That is a dozen packages so that a headless s390x can open a file
+dialog it has no display for.
+
+**To close, if ever:** build tk when something actually needs a GUI here.
+
+Optional and missing: libzip, parallel, portaudio, cups, xmlsec, freetds,
+libev, mariadb-libs, shfmt, postgis. The installer loops over those one name
+at a time, precisely because pacman refuses an entire transaction over one
+unknown name, so their absence does not stop an install.
+
+A note for the rust chain: nodejs lands here anyway, so avoiding it in
+libgit2 was not about keeping it out forever. libgit2 is built long before
+nodejs could be -- a build dependency that early is a cycle, not a
+convenience.
+
+**Why the rust chain is not a detour.** ERPLibre poetry.lock has 362 packages,
+and four of them are Rust extensions: cryptography, orjson, pydantic-core,
+rpds-py. PyPI publishes no s390x wheel for them, so pip compiles all four from
+source or installs none of them. rust is not an option here; it is the step
+between a built distribution and a running ERPLibre.
+
+ERPLibre builds its OWN Python -- 3.12.10, from `.python-odoo-version`, for
+Odoo 18 -- rather than using the 3.14 this port carries for pacman and meson.
+It builds it with pyenv, because there is no mise binary for s390x, which means
+compiling CPython: gcc, zlib, bzip2, readline, sqlite, openssl, libffi, xz,
+ncurses. All of them are built. `EL_PIP_PROVIDER=auto` will find no uv for
+s390x either and fall back to pip, which is the path that needs rust.
+
+**IT RUNS.** Odoo 18.0 serves its web interface on this port, against our own
+PostgreSQL. What was measured, not inferred:
+
+    /web/login              200, <title>Odoo</title>
+    /web/database/list      200, {"result": ["odoo_test"]}
+    /jsonrpc search_read    {"result": [{"id": 2, "login": "admin",
+                                         "name": "Administrator"}]}
+
+That last one is an authenticated ORM read over JSON-RPC -- the whole stack,
+end to end. The database behind it: PostgreSQL 18.6 on s390x-ibm-linux-gnu,
+compiled by gcc 16.2.1, holding 121 tables, 140 models, 12 installed modules.
+CPython 3.12.10 built by pyenv against our glibc 2.44, and every wheel compiled
+from source: cryptography, orjson, pydantic-core and rpds-py through rust,
+psycopg2 through our postgresql, lxml through our libxml2 and libxslt, pillow
+through libjpeg-turbo, pikepdf through qpdf.
+
+### What is NOT proven, and should not be read as though it were
+
+- ~~**ERPLibre addons.**~~ **Tested, not argued.** 127 of the 129 addon
+  repositories are on github.com and were cloned AT THE COMMITS the reference
+  checkout pins -- 127 clones, 0 failures. Odoo then discovered 2574 manifests
+  across a 118-entry addons_path, and ERPLibre own module went in:
+
+      erplibre_info                        installed
+      ir.module.module search_count        3249
+
+  read back through JSON-RPC, not from the log. The one repository left out
+  lives on git.bemade.org and needs credentials this port has no business
+  holding.
+- **mysqlclient.** ERPLibre pyproject.toml carries it as a NON-optional
+  dependency, and PyPI publishes only Windows wheels, so it always compiles and
+  always wants MariaDB client headers. Arch has no standalone
+  mariadb-connector-c: mariadb-libs comes only from the whole mariadb pkgbase,
+  which pulls boost, jemalloc, judy and cracklib, and clones rocksdb, duckdb and
+  columnstore. Hours of C++ for a MySQL client in a PostgreSQL application. Set
+  aside on instruction, and worth raising ERPLibre-side: its own Arch installer
+  marks mariadb-libs optional while poetry cannot finish without it.
+- ~~**systemd, a real boot.**~~ **Booted, and it comes back on its own.** The
+  port's own kernel -- 7.1.10-arch1-1, compiled by this port's gcc 16.2.1 and
+  binutils 2.47 -- boots a 24 GB ext4 image over virtio-blk-ccw under QEMU and
+  reaches multi-user in under six seconds. sshd binds 0.0.0.0:22, because the
+  kernel registers PF_INET; from inside, DNS resolves and
+  `curl https://pypi.org/simple/` answers 200 against a bundle of 121
+  certificates. postgresql and odoo are systemd units, both `enabled`, and
+  after `systemctl poweroff` and a fresh start NOTHING is typed in the guest:
+  `/web/login` answers 200 and the database list still names odoo_erplibre.
+  No unit fails and `systemctl is-system-running` reports `running`, which is
+  what BINFMT_MISC bought. `scripts/run-vm.sh` is the launcher.
+- **nginx, and any inbound service that is not hostfwd.** The guest reaches the
+  network through `-netdev user`, which gives outbound and two forwarded ports
+  and nothing else. No bridge, no reverse proxy, no TLS termination.
+- ~~**The CA bundle is generated in the guest.**~~ **The image build does it**
+  -- `scripts/build-image.sh`. `pacman --root` runs no scriptlets, and the
+  three that matter are not optional: without update-ca-trust every TLS client
+  fails on `error adding trust anchors`, without ssh-keygen -A sshd will not
+  start, and without systemd-sysusers pacman itself refuses to run for want of
+  the `alpm` account -- as does initdb, for want of `postgres`. The host is
+  s390x, so a chroot runs the guest's own binaries and closes all three at
+  build time. Measured on an image built from nothing: boots in 3.5 s,
+  `is-system-running` reports running with no failed unit, DNS resolves and
+  pypi answers 200.
+- **Stage 3.** Self-hosting still means rebuilding stage 2 with its own output
+  until the result reproduces itself.

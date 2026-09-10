@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# libvirt qemu hook -- installed as /etc/libvirt/hooks/qemu.
+#
+# WHAT IT IS FOR. The domain boots with <kernel>, a file outside the image,
+# because a z guest IPLs from a record zipl writes and s390-tools is not built
+# by this port. So `pacman -Syu linux` inside the guest changes what the IMAGE
+# carries and not what the next boot RUNS. That gap is the exact shape that
+# already cost one full boot: a kernel believed to be current, running old
+# code. This hook closes it by re-reading the kernel from the image every time
+# the domain starts.
+#
+# WHY debugfs. It reads ext4 without mounting it, so nothing here can leave a
+# mount on a disk the domain is about to open read-write.
+#
+# WHY IT DUPLICATES SIX LINES OF scripts/run-vm.sh. A hook that sources a file
+# out of somebody's git checkout stops working the day the checkout moves. It
+# is repetition bought deliberately, for a hook that must run with nothing but
+# the base system present.
+#
+# ARGUMENTS, from libvirt: $1 domain, $2 operation, $3 sub-operation.
+set -euo pipefail
+
+DOMAIN="@NAME@"
+IMG="@IMG@"
+KERNEL="@KERNEL@"
+
+# Every other domain on this host is none of our business, and saying so first
+# is what makes a global hook safe to install on a shared machine.
+[ "${1:-}" = "$DOMAIN" ] || exit 0
+[ "${2:-}" = "prepare" ] || exit 0
+
+[ -f "$IMG" ] || exit 0
+
+# A non-zero exit from `prepare` cancels the start, which is exactly what is
+# wanted here: scripts/run-vm.sh may already hold this image, and two writers
+# on one ext4 filesystem destroy it. Only a qemu that is NOT this domain counts
+# -- libvirt names its own with `guest=<domain>`.
+if pgrep -af "qemu-system-s390x.*$IMG" 2>/dev/null | grep -qv "guest=$DOMAIN"; then
+    logger -t libvirt-hook-"$DOMAIN" "refusing to start: another qemu already holds $IMG"
+    exit 1
+fi
+
+command -v debugfs >/dev/null || exit 0
+
+for src in $(debugfs -R "ls -p /usr/lib/modules" "$IMG" 2>/dev/null \
+             | tr '/' '\n' | grep -E '^[0-9]+\.[0-9]' \
+             | sed 's|^|/usr/lib/modules/|;s|$|/vmlinuz|') /boot/vmlinuz-linux; do
+    if debugfs -R "dump $src $KERNEL.new" "$IMG" 2>/dev/null && [ -s "$KERNEL.new" ]; then
+        mv "$KERNEL.new" "$KERNEL"
+        chmod 0644 "$KERNEL"
+        logger -t libvirt-hook-"$DOMAIN" "kernel refreshed from $src"
+        exit 0
+    fi
+    rm -f "$KERNEL.new"
+done
+
+# No kernel in the image: leave whatever is cached rather than block the start,
+# and say so where an operator will find it.
+logger -t libvirt-hook-"$DOMAIN" "no kernel found in $IMG, booting the cached one"
+exit 0

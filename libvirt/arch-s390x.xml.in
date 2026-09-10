@@ -1,0 +1,50 @@
+<!-- Template, not a domain. scripts/install-libvirt-domain.sh substitutes the
+     @TOKENS@ and defines the result; the paths depend on whose work tree this
+     is, and a path carrying an account name has no place in the repository.
+
+     IT IPLs. The disk carries a boot record written by zipl, so the guest
+     starts the way a z machine does and the kernel it runs is the one in its
+     own filesystem. @KERNELTAGS@ is empty in that case; when an image has
+     never had zipl run on it, it expands to the <kernel> and <cmdline> that
+     hand one in from outside, and the qemu hook keeps that copy current.
+
+     THE NIC IS ON THE CCW BUS by virtue of the machine type: s390-ccw-virtio
+     turns model 'virtio' into virtio-net-ccw. A guest given virtio-net-pci
+     here sees no interface at all. -->
+<domain type='kvm'>
+  <name>@NAME@</name>
+  <title>Arch Linux s390x</title>
+  <description>The port's own kernel and userland, serving ERPLibre.</description>
+  <memory unit='MiB'>@MEM@</memory>
+  <currentMemory unit='MiB'>@MEM@</currentMemory>
+  <vcpu placement='static'>@VCPU@</vcpu>
+  <os>
+    <type arch='s390x' machine='s390-ccw-virtio'>hvm</type>
+@KERNELTAGS@
+  </os>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>restart</on_crash>
+  <devices>
+    <emulator>@EMULATOR@</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw' cache='writeback'/>
+      <source file='@IMG@'/>
+      <target dev='vda' bus='virtio'/>
+      <!-- The IPL candidate. Without it there is nothing for a guest with no
+           <kernel> to start from. -->
+      <boot order='1'/>
+    </disk>
+    <interface type='network'>
+      <source network='@NETWORK@'/>
+      <model type='virtio'/>
+    </interface>
+    <!-- sclp, because that is the console an s390x guest actually has;
+         `virsh console @NAME@` attaches to it. -->
+    <console type='pty'>
+      <target type='sclp' port='0'/>
+    </console>
+    <memballoon model='virtio'/>
+  </devices>
+</domain>

@@ -48,6 +48,18 @@ STAGE1_PACKAGES=(
     # never contain. The answer is --without-selinux per package, which is
     # what Arch's own build chroot gets for free by not having the header.
     pam brotli libxml2 systemd pacman-mirrorlist libmakepkg-dropins
+    # docbook-xml and docbook-xsl: DATA, not code. Zipped DTDs, XSL stylesheets
+    # and a few xmlcatalog calls -- no compiler is involved, and docbook-xsl is
+    # arch=(any). They are here because their ABSENCE is what cost pam, shadow,
+    # p11-kit and systemd their man pages: those builds have xsltproc and are
+    # missing what xsltproc reads. Eighteen hooks in this port disable a
+    # documentation build; two data packages are a better trade than a
+    # nineteenth, and postgresql keeps `make world` untouched because of them.
+    #
+    # Placed straight after libxml2, which builds the xmlcatalog docbook-xml
+    # calls. pam is on the line ABOVE and so still builds before them -- that
+    # one needs a reorder, not just a package, and is left for stage 3.
+    docbook-xml docbook-xsl
     # The closure, named by pacman's own resolver rather than guessed.
     #
     # Everything above was added because a BUILD stopped. These were added
@@ -362,6 +374,20 @@ STAGE1_PACKAGES=(
     # from the running interpreter. The ARTEFACT check caught it.
     python-psutil
     llvm
+    # clang: expected to FAIL at stage 1, exactly as libxslt is, and for the
+    # same shape of reason -- the host cannot supply a dependency we build
+    # ourselves.
+    #
+    #   CMake Error at CMakeLists.txt:136 (message):
+    #     llvm-gtest not found.  Please install llvm-gtest or disable tests
+    #
+    # MEASURED BEFORE CHOOSING: our llvm package ships 31 llvm-gtest files --
+    # its PKGBUILD passes -DLLVM_INSTALL_GTEST=ON -- and the host has none.
+    # So -DLLVM_INCLUDE_TESTS=OFF would be a hook treating a closure gap as a
+    # configuration problem, and would silently drop what a stage-3 run with
+    # the test suites enabled is supposed to exercise. clang is named in
+    # CHROOT_STAGE2_PKGS instead: the chroot has our llvm, gtest included, and
+    # configures with no hook at all.
     clang
     # libaio: a real closure gap. lvm2 stops on
     #
@@ -382,4 +408,161 @@ STAGE1_PACKAGES=(
     # chroot, so that is the only place libxslt can come from -- it is in
     # STAGE2_FIRST, and a stage-1 run is expected to report it as failed.
     libxslt
+    # The rust chain, in dependency order. All three are expected to FAIL at
+    # stage 1, for the reason clang already documents: they are built against
+    # OUR llvm 22, and the host has an older one.
+    #
+    # libgit2 is the exception that could build on the host, and is here for
+    # order rather than necessity: cargo links it, and rust depends() on it.
+    libgit2
+    # lld is needed by rust twice over -- depends=(lld), and package_rust()
+    # links usr/bin/{ld.lld,ld64.lld,lld-link,wasm-ld} into rustlib gcc-ld.
+    lld
+    # rust itself. Its stage0 is an upstream binary, which is worth saying out
+    # loud; patches/pkgbuild/rust.sh says why there is no alternative.
+    rust
+    # What ERPLibre needs that this port did not already have: a database.
+    #
+    # numactl and liburing are postgresql's only missing dependencies, and both
+    # are small enough that dropping the flags would be the odder choice --
+    # numactl depends on glibc alone, liburing needs git to build and nothing
+    # to link. postgresql 18 uses io_uring for asynchronous I/O, so --without
+    # would be giving up a feature rather than avoiding a cost.
+    numactl liburing
+    # perl-io-tty and perl-ipc-run are not runtime dependencies of anything --
+    # they exist because stage 2 RUNS the test suites, and postgresql check()
+    # is `make check-world`, which includes the TAP tests that --enable-tap-tests
+    # turns on. Without them that check fails and the package is lost, for a
+    # reason that has nothing to do with the port.
+    perl-io-tty perl-ipc-run
+    # postgresql is expected to FAIL at stage 1, like clang and rust: it
+    # configures --with-llvm for JIT, and building that against the host older
+    # LLVM would either stop or, worse, not stop.
+    postgresql
+    # What ERPLibre Python dependencies need, and only what they need. Pillow
+    # stops on `could not be found for jpeg, a required dependency` and pikepdf
+    # on `qpdf/Constants.h: No such file or directory`. Odoo uses the first for
+    # product images and the second to manipulate PDFs.
+    #
+    # MEASURED before reaching for the whole imaging stack: Pillow names jpeg
+    # alone as required -- zlib it already has, and freetype only costs it
+    # ImageFont, which nothing in Odoo calls. Arch freetype2 makedepends on
+    # cairo, harfbuzz, librsvg and qt6-base for its demo programs, so that was
+    # the difference between two packages and a dozen.
+    libjpeg-turbo
+    qpdf
+    # openssh: not a dependency of anything here -- a DEPLOYMENT needs it. A
+    # QEMU guest with no sshd can only be driven through its console, and the
+    # s390x console is ttysclp0 over a single serial stream. FIDO2 is disabled
+    # in the hook: it would cost libfido2, libcbor and hidapi for a USB token
+    # this guest has no bus for.
+    openssh
+    # bc and cpio: the kernel build needs them, and nothing else here did.
+    # bc computes kernel/timeconst.h; cpio packs the initramfs image.
+    bc cpio
+    # sudo, for the DEPLOYMENT and not for the build. The chroot refuses it a
+    # hundred lines above, and that reasoning is sound where it stands: makepkg
+    # wants sudo only for --syncdeps, which --nodeps replaces. It ends at the
+    # target. ERPLibre install_arch_linux.sh is written as
+    # `sudo pacman -S --needed`, and every Arch guide, hook and habit assumes
+    # the binary exists; a machine that can only be administered by logging in
+    # as root is not a deployment. Same argument that admitted openssh.
+    sudo
+    # base-devel, which stopped being a group in 2023 and is a meta package
+    # now:  looks for a PACKAGE, and every Arch
+    # installation guide -- ERPLibre own installer included -- asks for it by
+    # that name. It compiles nothing; it names what a build machine needs, and
+    # this port has all of it, sudo included, as of the line above.
+    # debugedit, which base-devel names and makepkg calls to split debug
+    # symbols. This port builds with !debug, so nothing here needs it -- a
+    # machine that builds ITS OWN packages does.
+    debugedit
+    base-devel
+    # cloud-init, and the closure it needs. Measured rather than guessed: the
+    # PKGBUILDs were read by bash and the runtime dependencies followed until
+    # nothing new appeared -- twenty-two names in four passes, plus the Python
+    # packaging tools that none of them can be built without.
+    #
+    # WHY IT IS WANTED. A deployment can already set hostname, key and password
+    # by writing into the image before first boot, which is enough for a plain
+    # guest. cloud-init is what makes an image behave like every other cloud
+    # image: a user-data of one's own, data sources, accounts created at boot.
+    #
+    # The order is the build order, not an alphabet: the packaging backends
+    # first, because everything below them is built with them.
+    python-flit-core python-installer python-packaging python-setuptools
+    python-wheel python-build python-pathspec python-editables
+    # calver and pluggy are BUILD dependencies of the two below, which is why
+    # a closure computed from `depends` alone did not find them: trove-
+    # classifiers stops on calver, hatchling on pluggy and trove-classifiers.
+    python-calver python-pluggy
+    python-trove-classifiers python-hatchling python-poetry-core
+    # hatchling's plugins, which are not hatchling: a package whose version
+    # comes from git needs hatch-vcs, and hatchling reports its absence as
+    # `Unknown version source: vcs` rather than as a missing dependency.
+    # attrs, urllib3 and referencing all stop there, on the same line.
+    python-hatch-vcs python-hatch-fancy-pypi-readme
+    # maturin, the backend that builds a Rust extension into a wheel, and the
+    # two packages under it. Named without the python- prefix upstream, unlike
+    # everything around it.
+    #
+    # THE CHAIN IS FOUR DEEP, and each link was found by building the one above
+    # it: semantic-version, setuptools-rust, maturin, then rpds-py -- and
+    # rpds-py is what jsonschema needs, which is what cloud-init needs. A
+    # closure over `depends` shows none of it: every one of these is a BUILD
+    # dependency, and they are only visible from the error of the build that
+    # wanted them.
+    python-semantic-version python-setuptools-rust maturin
+    # The pure-Python leaves, then what depends on them.
+    python-typing_extensions python-attrs python-idna python-urllib3
+    python-certifi python-charset-normalizer python-requests
+    # python-yaml, and NOT python-pyyaml: that is the name cloud-init depends
+    # on, and the name Arch PROVIDES rather than the one it packages. Asking
+    # for the provided name makes git ask for a login, which is how
+    # gitlab.archlinux.org says a repository does not exist.
+    # libyaml before python-yaml: the C library the binding loads at runtime.
+    # It was missed for the same reason as the name above -- a closure looked
+    # up python-pyyaml, which nothing packages, so nothing read what
+    # python-yaml itself depends on.
+    libyaml
+    python-yaml python-configobj python-pyserial python-netifaces
+    python-jsonpointer python-jsonpatch python-oauthlib
+    # jsonschema's own chain. rpds-py is a Rust extension, which this port can
+    # build: rust is already here, and pip compiled the same wheel for ERPLibre.
+    python-rpds-py python-referencing python-jsonschema-specifications
+    python-jsonschema
+    # openbsd-netcat, which cloud-init calls, and the two libraries under it.
+    libmd libbsd openbsd-netcat
+    # A DHCP client: cloud-init names the virtual package, and something has to
+    # provide it. dhcpcd rather than dhclient -- one binary, no ISC stack.
+    dhcpcd
+    # bash-completion: cloud-init's meson looks for it with pkg-config and
+    # stops the configure when it is absent. It ships completion files, not
+    # code, and is one of the two build dependencies cloud-init names.
+    bash-completion
+    cloud-init
+    # THE CLOSURE STAGE 3 EXPOSED. Four packages that packages already here
+    # DEPEND ON and that nothing ever built: stage 2 builds with --nodeps and
+    # nothing checked afterwards, so clang, cython, linux-headers and
+    # poetry-core each name something absent from the repository they live in.
+    # Until these exist, `pacman -S clang` fails on a target, and a chroot
+    # cannot be populated from repo2 alone -- which is how stage 3 found them.
+    #
+    # None was hard, which is the point: pahole wants libelf and zlib, lark
+    # wants typing_extensions, pygments wants nothing, and compiler-rt is
+    # llvm's own runtime library, built from the source llvm already uses.
+    # They were missing for want of looking, not for want of a way.
+    python-lark-parser python-pygments pahole compiler-rt
+    # s390-tools, for zipl alone: the boot record an IPL reads. Its PKGBUILD is
+    # written here rather than fetched -- Arch has no such package, this being
+    # the one tool that exists only on this architecture. Without it a guest
+    # boots a kernel handed to it from outside its own filesystem.
+    s390-tools
+    # linux: the kernel, and the reason a deployment needs one of our own. The
+    # image in boot/ was cross-built in an earlier phase; it boots and mounts
+    # ext4 over virtio-blk-ccw, and it has NO TCP/IP -- no PF_INET, no
+    # /proc/sys/net/ipv4, and sshd dying on `Cannot bind any address`.
+    # patches/pkgbuild/linux.sh generates an s390x config from the in-tree
+    # defconfig and verifies sixteen symbols before the build proceeds.
+    linux
 )

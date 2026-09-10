@@ -1,0 +1,60 @@
+# Written here, not fetched: Arch has no s390-tools package and no reason to
+# have one. This is the only PKGBUILD in the port that upstream does not own,
+# and it exists for one program.
+#
+# WHY ONLY zipl. s390-tools builds some forty tools, and nearly all of them
+# drive hardware a QEMU guest does not have: DASD volumes, zFCP adapters,
+# crypto cards, HMC consoles. zipl is the one thing a virtual guest cannot do
+# without -- it writes the boot record that IPL reads, which is how a z machine
+# starts at all. Everything else would be dependencies for devices that are
+# not there.
+#
+# WHAT IT REPLACES. Without zipl the domain boots a <kernel> handed to it from
+# outside the image, and image and running kernel can drift apart. With it the
+# guest boots from its own disk, like any other machine, and can be moved to
+# another host as one file.
+#
+# THE PATHS ARE OVERRIDDEN. The Makefiles install into /sbin and /lib, which on
+# Arch are symlinks into /usr; a package that ships them as directories fights
+# the filesystem package and loses.
+
+pkgname=s390-tools
+pkgver=2.40.0
+pkgrel=1
+pkgdesc='zipl, the boot loader an s390x machine IPLs from'
+arch=('s390x')
+url='https://github.com/ibm-s390-linux/s390-tools'
+license=('MIT')
+depends=('glibc')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  # zipl links four of the in-tree libraries and nothing outside libc; the
+  # top-level Makefile would build the other thirty-six tools as well.
+  for _dir in libutil libvtoc libccw libdasd zipl; do
+    make -C "$_dir"
+  done
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make -C zipl DESTDIR="$pkgdir" install \
+    BINDIR=/usr/bin \
+    USRSBINDIR=/usr/bin \
+    LIBDIR=/usr/lib \
+    TOOLS_LIBDIR=/usr/lib/s390-tools
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+  # The Makefiles create a fixed set of directories whether the tool that owns
+  # each one was built or not: zkey's plugin directory, an empty include tree,
+  # zfcpdump's. One of them is fatal rather than untidy -- /usr/lib64 is a
+  # SYMLINK on this port, provided by filesystem, so a package shipping it as a
+  # directory is refused outright:
+  #
+  #   error: /usr/lib64 exists in filesystem (owned by filesystem)
+  #
+  # makepkg keeps empty directories here (OPTIONS=emptydirs), so they go now.
+  find "$pkgdir" -type d -empty -delete
+}

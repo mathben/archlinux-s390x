@@ -38,6 +38,16 @@ install_host_deps() {
     # gperf for coreutils, asciidoc for pacman, po4a for xz, gnat for gcc's
     # Ada front end, debuginfod and jansson for binutils.
     #
+    # binutils-dev, for llvm. LLVMgold includes <plugin-api.h>:
+    #
+    #   gold-plugin.cpp:39:10: fatal error: plugin-api.h: No such file
+    #
+    # It looked at first like fallout from disabling gold in our binutils, and it
+    # is not: our binutils package SHIPS plugin-api.h at both stages -- checked --
+    # so LLVMgold builds correctly in the chroot. Only the host was missing it,
+    # because Ubuntu keeps that header in binutils-dev and nothing had asked for
+    # it before.
+    #
     # THE LIST WAS ALSO A LIE BY OMISSION. An audit of the six packages that
     # follow found libreadline-dev, libncurses-dev, zlib1g-dev, python3-dev,
     # doxygen, xsltproc, docbook-xsl, elinks and libcap2-bin already present
@@ -156,6 +166,7 @@ install_host_deps() {
         build-essential autoconf automake libtool m4 patch texinfo bison flex \
         zstd xz-utils bzip2 \
         systemtap-sdt-dev asciidoc autopoint gperf help2man rsync \
+        binutils-dev \
         libgmp-dev libmpfr-dev libmpc-dev python3-docutils \
         libseccomp-dev libpcre2-dev \
         po4a gnat libdebuginfod-dev libjansson-dev \

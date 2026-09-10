@@ -33,13 +33,30 @@ source "$HERE/packages.sh"
 # watched(): bootstrap-pacman.sh cannot be sourced here -- see lib-watch.sh.
 source "$HERE/lib-watch.sh"
 WORK="${WORK:-$HOME/work/arch-s390x}"
-REPO1="${REPO1:-$WORK/repo/s390x}"
-REPO2="${REPO2:-$WORK/repo2/s390x}"
-ROOT="${ROOT:-$WORK/rootfs-stage2}"
-CONF="$WORK/pacman-stage2.conf"
-CACHE="$WORK/pacman-stage2.cache"
-CONF2="$WORK/pacman-stage2-both.conf"
-STATE2="$WORK/stage2.state"
+
+# WHICH STAGE THIS RUN IS. Stage 2 rebuilds stage 1's output against itself;
+# stage 3 does the same to stage 2's, and the port is self-hosting when stage 3
+# reproduces stage 2. The machinery is identical -- what changes is WHERE the
+# chroot is populated from and WHERE the result lands, so it is one variable
+# and not a second script:
+#
+#   STAGE_N=3 bash scripts/build-stage2.sh --all
+#
+# The hooks need nothing: all four ask whether EL_STAGE is 1, and 3 is not 1,
+# exactly as 2 is not.
+STAGE_N="${STAGE_N:-2}"
+[ "$STAGE_N" -ge 2 ] 2>/dev/null || { echo "STAGE_N must be 2 or more" >&2; exit 1; }
+# Stage 2 reads the stage-1 repository, which is named `repo`; every stage
+# after it reads the one numbered below it.
+if [ "$STAGE_N" = 2 ]; then _prev_repo="repo"; else _prev_repo="repo$((STAGE_N - 1))"; fi
+
+REPO1="${REPO1:-$WORK/$_prev_repo/s390x}"
+REPO2="${REPO2:-$WORK/repo$STAGE_N/s390x}"
+ROOT="${ROOT:-$WORK/rootfs-stage$STAGE_N}"
+CONF="${CONF:-$WORK/pacman-stage$STAGE_N.conf}"
+CACHE="${CACHE:-$WORK/pacman-stage$STAGE_N.cache}"
+CONF2="${CONF2:-$WORK/pacman-stage$STAGE_N-both.conf}"
+STATE2="${STATE2:-$WORK/stage$STAGE_N.state}"
 PATCH_DIR="${PATCH_DIR:-$HERE/../patches/pkgbuild}"
 BUILDER="${BUILDER:-$(id -un)}"
 BUILD_UID="$(id -u)"
@@ -62,6 +79,18 @@ CHROOT_PKGS=(
     # stage 2 tries -- stopped on `rsync: command not found`. The host had it
     # from apt, which is exactly why stage 1 never mentioned it.
     rsync
+    # The Python packaging tools, and STAGE 3 IS WHAT REVEALED THEM. Every
+    # python-* package is built with them, and none of them declares that they
+    # must already be in the chroot -- at stage 2 they were, because stage 1
+    # had left them and the restore put them back each run. A chroot populated
+    # from stage 2 alone starts without them, and the failure is circular:
+    #
+    #   python-setuptools: Cannot import 'setuptools.build_meta'
+    #
+    # setuptools is built with setuptools. Naming them here is what makes the
+    # chroot reproducible rather than inherited.
+    python python-setuptools python-build python-installer python-wheel
+    python-flit-core python-packaging
     # The same class, named by the failures of the first full pass rather than
     # guessed at. Each one is here because a package said so:
     #
@@ -137,7 +166,7 @@ space_ok() {
 require_space() { space_ok || die "not enough disk space to start"; }
 
 make_rootfs() {
-    log "Populating the stage-2 rootfs from stage 1"
+    log "Populating the stage-$STAGE_N rootfs from stage $((STAGE_N - 1))"
     cat > "$CONF" <<EOF
 [options]
 Architecture = s390x
@@ -203,7 +232,7 @@ EOF
     # stage2-install.txt, so the fallback's success overwrote the failure that
     # caused it and the reason was gone.
     if ! sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
-            --noconfirm -Sy "${all[@]}" > "$WORK/stage2-install-full.txt" 2>&1; then
+            --noconfirm -Sy "${all[@]}" > "$WORK/stage$STAGE_N-install-full.txt" 2>&1; then
         # pacman puts the reason on a `::` line, and the first version of this
         # grep matched three phrases that did not include it -- so it printed
         # NOTHING between "did not resolve" and "falling back". A fallback that
@@ -217,11 +246,11 @@ EOF
         # and a FILE owned by two packages (`exists in both`). The last one is
         # invisible to -Syp, which is why the exclusion list was wrong twice.
         grep -E "^error|^:: unable|in conflict|exists in both|target not found" \
-            "$WORK/stage2-install-full.txt" | sed 's/^/    /' | cut -c1-100 | head -6
+            "$WORK/stage$STAGE_N-install-full.txt" | sed 's/^/    /' | cut -c1-100 | head -6
         printf '  falling back to CHROOT_PKGS (see stage2-install-full.txt)\n'
         sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
-            --noconfirm -Sy "${CHROOT_PKGS[@]}" > "$WORK/stage2-install.txt" 2>&1 \
-            || { tail -20 "$WORK/stage2-install.txt" >&2; die "populate failed"; }
+            --noconfirm -Sy "${CHROOT_PKGS[@]}" > "$WORK/stage$STAGE_N-install.txt" 2>&1 \
+            || { tail -20 "$WORK/stage$STAGE_N-install.txt" >&2; die "populate failed"; }
     fi
     printf '  %s packages installed\n' "$(sudo ls "$ROOT/var/lib/pacman/local" | wc -l)"
 
@@ -304,9 +333,36 @@ EOF
             # split package like libxml2-docs is not in it under that name.
             pb=$(bsdtar -xOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgbase = //p')
             grep -qxF "${pb:-$pn}" "$STATE2" 2>/dev/null || continue
-            # Installed, or named as a tool stage 2 has to supply itself.
+            # A package that cannot coexist with what is installed must not
+            # come back by ANY route. Stated here rather than relied upon:
+            # today every CHROOT_EXCLUDE name also exists in repo1, so the
+            # test below would have caught them, but that is an accident of
+            # the current repository and not a rule.
+            if printf ' %s ' "${CHROOT_EXCLUDE[*]}" | grep -q " $pn "; then
+                continue
+            fi
+            # Installed, or a LEAF repo1 never had, or named outright.
+            #
+            # THE MIDDLE CASE WAS MISSING, and it cost a twenty-minute rust
+            # build. libgit2, numactl, liburing, docbook-xml and docbook-xsl
+            # exist only in repo2: this port never built them at stage 1. So
+            # the populate step cannot install them, so `$inst` never names
+            # them, so they were dropped at the next make_rootfs -- an hour
+            # after they had built cleanly. rust then stopped on
+            #
+            #   pkg-config --libs --cflags libgit2 'libgit2 >= 1.9.4'
+            #   Package libgit2 was not found in the pkg-config search path.
+            #
+            # Naming those five in CHROOT_STAGE2_PKGS would have worked, and
+            # would have set the same trap for the sixth. A package repo1 does
+            # not have cannot DISPLACE anything by being restored, and
+            # displacement is the entire worry that list arbitrates -- so it
+            # comes back unconditionally. The list keeps what it is actually
+            # for: repo1 has the package, and the repo2 build must win anyway.
             if ! grep -qxF "$pn" <<< "$inst"; then
-                printf ' %s ' "${CHROOT_STAGE2_PKGS[*]}" | grep -q " $pn " || continue
+                if compgen -G "$REPO1/$pn-[0-9]*.pkg.tar.*" >/dev/null; then
+                    printf ' %s ' "${CHROOT_STAGE2_PKGS[*]}" | grep -q " $pn " || continue
+                fi
             fi
             back+=("$f")
         done
@@ -316,8 +372,8 @@ EOF
     if [ "${#back[@]}" -gt 0 ]; then
         sudo pacman --root "$ROOT" --config "$CONF" --cachedir "$CACHE" \
             --noconfirm --nodeps --nodeps -U "${back[@]}" \
-            > "$WORK/stage2-restore.txt" 2>&1 \
-            || { tail -20 "$WORK/stage2-restore.txt" >&2; die "restoring stage-2 output failed"; }
+            > "$WORK/stage$STAGE_N-restore.txt" 2>&1 \
+            || { tail -20 "$WORK/stage$STAGE_N-restore.txt" >&2; die "restoring stage-2 output failed"; }
         printf '  %s stage-2 package(s) restored\n' "${#back[@]}"
     fi
 }
@@ -619,6 +675,48 @@ in_chroot() {
 # Generated from OUR OWN trust source, not copied from the host: this is what
 # will be on the target, and copying Ubuntu's bundle would be exactly the kind
 # of host artefact the ARTEFACT check exists to find.
+# The package scriptlets, which `pacman --root` never ran either.
+#
+# THE SYMPTOM was a postgresql build that stopped nine minutes in on
+#
+#   postgres.sgml:22: I/O error : failed to load
+#   "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd"
+#
+# with docbook-xml INSTALLED and /etc/xml/docbook-xml present on disk. What was
+# missing is /etc/xml/catalog -- the ROOT catalog that delegates to it -- which
+# the package's own post_install creates. generate_ca_bundle below exists
+# because `pacman --root` does not run ALPM HOOKS. Scriptlets turn out to be
+# the same story one layer down, and the port had only learned half of it.
+#
+# WHY THIS RUNS UPSTREAM SCRIPT rather than writing the catalog by hand: the
+# entries are version-dependent -- docbook-xsl registers a delegate per release
+# series, docbook-xml one per DTD version -- so a hand-copied list goes stale
+# the first time Arch bumps either. The scriptlet is already on disk in the
+# local database. Running it is shorter AND more correct.
+#
+# Safe to run every time: make_rootfs rebuilds the chroot on each invocation,
+# so this always meets a fresh /etc and cannot accumulate duplicate entries.
+run_scriptlets() {
+    local sl base name ver ran=0 failed=0
+    for sl in "$ROOT"/var/lib/pacman/local/*/install; do
+        [ -f "$sl" ] || continue
+        base=${sl%/install}; base=${base##*/}
+        # base is name-pkgver-pkgrel; post_install wants pkgver-pkgrel.
+        ver=${base##*-}
+        name=${base%-*}
+        ver="${name##*-}-$ver"
+        if sudo chroot "$ROOT" /usr/bin/env -i PATH=/usr/bin \
+                /usr/bin/bash -c ". /var/lib/pacman/local/$base/install
+                    declare -f post_install >/dev/null || exit 0
+                    post_install '$ver'" >/dev/null 2>&1; then
+            ran=$((ran + 1))
+        else
+            failed=$((failed + 1))
+        fi
+    done
+    printf '  %s scriptlet(s) run, %s failed\n' "$ran" "$failed"
+}
+
 generate_ca_bundle() {
     log "Generating the CA bundle"
     # AS ROOT, not through in_chroot.
@@ -865,6 +963,12 @@ CHROOT_STAGE2_PKGS=(
     python-markupsafe python-jinja python-pkgconfig cython
     python-poetry-core python-vcs-versioning python-fastjsonschema gyp
     python-psutil
+    # clang has no stage-1 package AT ALL -- not a contaminated one, none. The
+    # host has no llvm-gtest, so clang cannot even configure outside. It is
+    # here so a rebuilt chroot takes it back from repo2, which rust will need.
+    clang
+    lld
+    rust
 )
 
 # Packages whose sources must be extracted on the HOST, because the chroot
@@ -940,7 +1044,20 @@ stage2_build() {
     #
     # Pinned to upstream.lock like stage 1's clone, so a package first built here
     # is as reproducible as one built there.
-    if [ ! -d "$dir/.git" ]; then
+    # A PKGBUILD THIS REPOSITORY WRITES ITSELF. Every package above is Arch's,
+    # fetched and then patched, and that is the right default: it keeps the
+    # port a set of differences rather than a fork. It cannot cover a tool Arch
+    # has no reason to package at all -- zipl exists only on this architecture,
+    # so there is nothing upstream to clone and nothing to diff against.
+    #
+    # Such a PKGBUILD lives in pkgbuild/<name>/ and is copied, not cloned. It
+    # is deliberately NOT a fallback for a failed clone: a network error would
+    # then silently build something other than what the name says.
+    if [ -f "$HERE/../pkgbuild/$name/PKGBUILD" ]; then
+        echo "  local PKGBUILD for $name"
+        rm -rf "$dir"; mkdir -p "$dir"
+        cp -r "$HERE/../pkgbuild/$name/." "$dir/"
+    elif [ ! -d "$dir/.git" ]; then
         local url="https://gitlab.archlinux.org/archlinux/packaging/packages/$name.git"
         local sha=""
         [ -f "$HERE/upstream.lock" ] &&
@@ -971,7 +1088,7 @@ stage2_build() {
             #
             # A list of file names cannot say why. The hooks read EL_STAGE and
             # decide per section, with the reason written beside the guard.
-            ( cd "$dir" && EL_STAGE=2 bash "$PATCH_DIR/$name.sh" ) || {
+            ( cd "$dir" && EL_STAGE="$STAGE_N" bash "$PATCH_DIR/$name.sh" ) || {
                 echo "  hook failed" >&2; return 1; }
             # A hook can leave a PKGBUILD that no longer parses, and makepkg
             # reports that far from its cause:
@@ -1051,6 +1168,22 @@ stage2_build() {
     [ "${#produced[@]}" -gt 0 ] || { echo "  no package produced" >&2; return 1; }
 
     cp -f "${produced[@]}" "$REPO2/" || return 1
+    # LE CACHE PORTE LE MEME NOM ET N EST PLUS LE MEME FICHIER. pacman garde
+    # ses téléchargements sous nom-version-release, qui ne change pas quand un
+    # paquet est REBATI : la copie en cache reste l ancienne, sa somme ne
+    # correspond plus à celle de la base, et l installation suivante meurt sur
+    #
+    #   error: failed to commit transaction (invalid or corrupted package)
+    #
+    # loin d ici, dans la construction d une image. Celui qui remplace le
+    # paquet est le seul à savoir qu il faut oublier l ancien.
+    local _cache _p
+    for _cache in "$WORK"/pacman-*.cache; do
+        [ -d "$_cache" ] || continue
+        for _p in "${produced[@]}"; do
+            rm -f "$_cache/${_p##*/}" "$_cache/${_p##*/}.sig" 2>/dev/null || true
+        done
+    done
     local names=() f
     for f in "${produced[@]}"; do names+=("$(basename "$f")"); done
     ( cd "$REPO2" && repo-add core.db.tar.gz "${names[@]}" ) > /dev/null || return 1
@@ -1104,8 +1237,8 @@ stage2_build() {
         return 0
     fi
     sudo pacman --root "$ROOT" --config "$CONF2" --cachedir "$CACHE" \
-        --noconfirm --nodeps --nodeps -U "${keep[@]}" > "$WORK/stage2-inst-$name.txt" 2>&1 || {
-        tail -10 "$WORK/stage2-inst-$name.txt" >&2; return 1; }
+        --noconfirm --nodeps --nodeps -U "${keep[@]}" > "$WORK/stage$STAGE_N-inst-$name.txt" 2>&1 || {
+        tail -10 "$WORK/stage$STAGE_N-inst-$name.txt" >&2; return 1; }
     printf '  installed %s package(s)\n' "${#produced[@]}"
 
     # Clean up, but only now, and only because it worked.
@@ -1151,12 +1284,12 @@ rebuild() {
         # Per package, not once at the start. The run is long enough that the
         # disk state at the end has nothing to do with the disk state when it
         # was checked, and the failure mode is not local to this script.
-        space_ok || { echo "== stage 2: stopping, disk too low =="; break; }
-        log "stage 2: $p"
+        space_ok || { echo "== stage $STAGE_N: stopping, disk too low =="; break; }
+        log "stage $STAGE_N: $p"
         # watched, not a plain call: see bootstrap-pacman.sh. A hundred and
         # thirty-three packages is far too many to sit in front of, and one
         # silent build would hold the whole run.
-        if watched "$WORK/stage2-log-$p.txt" stage2_build "$p"; then
+        if watched "$WORK/stage$STAGE_N-log-$p.txt" stage2_build "$p"; then
             echo "$p" >> "$STATE2"; ok=$((ok + 1)); echo "OK    $p"
         else
             rc=$?
@@ -1164,14 +1297,93 @@ rebuild() {
             if [ "$rc" -eq 2 ]; then
                 echo "STALL $p  (no output for ${EL_STALL_MIN:-45} min, killed)"
             else
-                echo "FAIL  $p  (see $WORK/stage2-log-$p.txt)"
+                echo "FAIL  $p  (see $WORK/stage$STAGE_N-log-$p.txt)"
             fi
-            tail -5 "$WORK/stage2-log-$p.txt" | sed 's/^/      /'
+            tail -5 "$WORK/stage$STAGE_N-log-$p.txt" | sed 's/^/      /'
         fi
     done
     echo
-    echo "== stage 2: $ok rebuilt, $fail failed =="
+    echo "== stage $STAGE_N: $ok rebuilt, $fail failed =="
     [ "$fail" -eq 0 ] || printf '  failed: %s\n' "${failed[*]}"
+}
+
+# RESOLVE, at the end of every pass.
+#
+# WHY IT IS HERE AND NOT IN A SCRIPT SOMEBODY RUNS. Stage 1 has this check in
+# test-chroot.sh and stage 2 had none, so six declared dependencies sat absent
+# from repo2 for weeks -- clang naming compiler-rt, cython naming numpy,
+# linux-headers naming pahole. `pacman -S clang` failed on every target and
+# nothing said so. It took populating a stage-3 chroot from repo2 alone to
+# notice. A check that must be remembered is a check that reports late.
+#
+# --nodeps is what makes the hole possible: a package builds without its
+# dependencies being installable, and the repository accepts it. Nothing else
+# in this pipeline ever asks whether the result can be INSTALLED.
+#
+# -Syp prints and installs nothing. The probe root and its dbpath must exist
+# first, or alpm reports it as a bad --root argument rather than a directory it
+# declined to create; and -y is needed because a fresh dbpath has no sync
+# database, without which every package reads as "target not found".
+resolve_check() {
+    local probe="$ROOT.resolve" conf="$WORK/pacman-resolve.conf" out="$WORK/stage$STAGE_N-resolve.txt"
+    local pkgs=()
+    local f
+    for f in "$REPO2"/*.pkg.tar.zst; do
+        [ -e "$f" ] || continue
+        f="${f##*/}"
+        # nom-version-release-arch.pkg.tar.zst : les quatre derniers champs
+        # partent, le reste EST le nom -- qui peut lui-meme porter des tirets.
+        pkgs+=("$(echo "${f%-*-*-*.pkg.tar.zst}")")
+    done
+    [ ${#pkgs[@]} -gt 0 ] || { echo "  RESOLVE: no packages to check"; return 0; }
+
+    cat > "$conf" <<EOF
+[options]
+Architecture = s390x
+SigLevel = Never
+[core]
+Server = file://$REPO2
+EOF
+    sudo rm -rf "$probe"; sudo mkdir -p "$probe/var/lib/pacman"
+    log "RESOLVE: can everything in repo$STAGE_N be installed together?"
+    if sudo pacman --root "$probe" --config "$conf" --cachedir "$CACHE" \
+            --noconfirm -Syp "${pkgs[@]}" > "$out" 2>&1; then
+        printf '  ok    %s packages resolve\n' "${#pkgs[@]}"
+    else
+        printf '  FAIL  unsatisfied, and each one fails on a target too:\n'
+        grep -E "unable to satisfy|target not found" "$out" \
+            | sed 's/.*dependency //; s/ required by/ <-/' | sort -u \
+            | sed 's/^/        /'
+        printf '        full output: %s\n' "$out"
+    fi
+    sudo rm -rf "$probe"
+}
+
+# UNE SIGNATURE NE SURVIT PAS A UN repo-add.
+#
+# `repo-add` réécrit core.db à chaque paquet ajouté ; la signature posée à côté
+# reste celle de la base d'avant. pacman ne dit pas « signature périmée », il
+# dit
+#
+#   error: core: signature from "..." is invalid
+#
+# et refuse le dépôt ENTIER -- ce qui, sur un invité qui vérifie, ressemble à
+# une clé compromise plutôt qu'à une passe de construction. Signer est donc une
+# opération à refaire, pas un état acquis.
+#
+# Re-signé seulement si le dépôt L ETAIT déjà : un dépôt sans signature n'en
+# gagne pas une par surprise, et une passe ne réclame pas une clé à qui n'en a
+# pas voulu.
+resign_repo() {
+    [ -f "$REPO2/core.db.tar.gz.sig" ] || return 0
+    local here
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ ! -x "$here/sign-repo.sh" ]; then
+        echo "  the repository is signed and sign-repo.sh is missing: its signature is now stale" >&2
+        return 0
+    fi
+    log "Re-signing: repo-add rewrote the database"
+    REPO2="$REPO2" bash "$here/sign-repo.sh" 2>&1 | sed -n 's/^  /    /p' | tail -4
 }
 
 main() {
@@ -1182,6 +1394,7 @@ main() {
     configure_chroot
     mount_chroot
     generate_ca_bundle
+    run_scriptlets
     smoke_test || die "the chroot cannot build; stage 2 stops here"
     log "Chroot ready"
     if [ "$#" -eq 0 ]; then
@@ -1201,6 +1414,11 @@ main() {
     else
         rebuild "$@"
     fi
+    # Après la passe, pas avant : ce qui vient d'être bâti est ce qu'il faut
+    # interroger, et un paquet ajouté peut fermer un trou comme en ouvrir un --
+    # pahole a introduit ostra-cg, qui réclamait matplotlib.
+    resolve_check
+    resign_repo
 }
 
 main "$@"
