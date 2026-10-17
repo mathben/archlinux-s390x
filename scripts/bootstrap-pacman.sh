@@ -256,7 +256,7 @@ install_host_shims() {
     # Links, not copies: the headers must track the packages that own them.
     # Each is skipped when a real directory already sits there, so a host that
     # files them classically is left alone.
-    local _t _n
+    local _t _n _f
     _t="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
     for _n in asm bits gnu; do
         [ -e "/usr/include/$_n" ] && continue
@@ -264,13 +264,32 @@ install_host_shims() {
         sudo ln -sfn "/usr/include/$_t/$_n" "/usr/include/$_n"
         say_shim "/usr/include/$_n -> $_t/$_n"
     done
-    if [ ! -e /usr/include/sys/sdt.h ] && [ -e "/usr/include/$_t/sys/sdt.h" ]; then
+    # sys/ IS NOT LIKE THE OTHERS: it already exists, and other -dev packages
+    # own files in it (acl.h, capability.h). A directory symlink would hide
+    # them, so each missing header is linked on its own.
+    #
+    # ALL of them, not the one that just failed. Linking sdt.h alone gets as
+    # far as its own first line:
+    #
+    #   /usr/include/sys/sdt.h:246: fatal error: sdt-config.h: No such file
+    #
+    # and every header behind that one waits its turn. Bridging the directory
+    # contents closes the class instead of its first instance.
+    if [ -d "/usr/include/$_t/sys" ]; then
         sudo mkdir -p /usr/include/sys
-        sudo ln -sfn "/usr/include/$_t/sys/sdt.h" /usr/include/sys/sdt.h
-        say_shim "/usr/include/sys/sdt.h -> $_t/sys/sdt.h"
+        _n=0
+        for _f in "/usr/include/$_t/sys/"*.h; do
+            [ -e "$_f" ] || continue
+            [ -e "/usr/include/sys/${_f##*/}" ] && continue
+            sudo ln -sfn "$_f" "/usr/include/sys/${_f##*/}"
+            _n=$((_n + 1))
+        done
+        [ "$_n" -gt 0 ] && say_shim "/usr/include/sys: $_n header(s) linked from $_t"
     fi
     # The bridge is load-bearing: glibc is the second package stage 1 builds,
     # and nothing after it survives its absence.
+    [ -e /usr/include/sys/sdt-config.h ] || [ ! -e "/usr/include/$_t/sys/sdt-config.h" ] || {
+        echo "host shims: sys/ was not bridged" >&2; return 1; }
     [ -e /usr/include/asm/sigcontext.h ] || {
         echo "host shims: asm/ is still not reachable from /usr/include" >&2
         echo "  looked for /usr/include/$_t/asm" >&2
