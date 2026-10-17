@@ -159,6 +159,14 @@ install_host_deps() {
     # exists as an Ubuntu -dev package, so the queue terminates. The rule is
     # about queues with no end, like dbus asking for a third documentation
     # tool that needed Qt.
+    # FOUR TOOLS NAMED BY WHAT FAILED WITHOUT THEM, not by guesswork:
+    #   patchelf        curl's package() calls it by name
+    #   gtk-doc-tools   libpsl's autoreconf runs gtkdocize
+    #   systemd-dev     util-linux's meson asks pkg-config for `systemd`;
+    #                   libsystemd-dev ships libsystemd.pc, not systemd.pc
+    #   libnpth0-dev    gnupg's configure stops on "Required libraries not
+    #                   found" and names npth in the lines above it
+    #
     # python-is-python3, AND WHY IT IS NOT OPTIONAL.
     #
     # On Arch, `python` IS python3; Ubuntu ships only `python3`. Several
@@ -187,6 +195,7 @@ install_host_deps() {
         libtirpc-dev libnsl-dev docbook5-xml docbook-xsl-ns elinks \
         cmake python3-build python3-installer python3-pkgconfig \
         python3-setuptools python3-wheel python-is-python3 \
+        patchelf gtk-doc-tools systemd-dev libnpth0-dev \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
