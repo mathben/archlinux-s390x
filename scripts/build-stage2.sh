@@ -1337,6 +1337,26 @@ resolve_check() {
     done
     [ ${#pkgs[@]} -gt 0 ] || { echo "  RESOLVE: no packages to check"; return 0; }
 
+    # LA BASE PEUT ANNONCER CE QUI N EXISTE PLUS.
+    #
+    # repo-add ajoute, il ne retire pas. Quand un crochet supprime un
+    # sous-paquet d une recette -- git-zsh-completion, ostra-cg -- le fichier
+    # disparaît et son entrée reste. RESOLVE ne le voyait pas : il bâtit sa
+    # liste depuis les FICHIERS, donc il n interroge jamais le fantôme. Un
+    # invité, lui, lit la base, et meurt sur
+    #
+    #   error: target not found: ostra-cg
+    #
+    # loin d ici. Un fantôme se répare en rebâtissant la base depuis les
+    # fichiers réels, puis en la re-signant.
+    local ghosts=0 entry fname
+    while read -r fname; do
+        [ -n "$fname" ] || continue
+        [ -e "$REPO2/$fname" ] || { printf "  GHOST %s announced by the database, absent on disk\n" "$fname"; ghosts=$((ghosts+1)); }
+    done < <(bsdtar xOzf "$REPO2/core.db.tar.gz" '"'"'*/desc'"'"' 2>/dev/null \
+             | awk '"'"'/^%FILENAME%$/{getline; print}'"'"')
+    [ "$ghosts" -eq 0 ] || printf "  %s ghost(s): rm the database and re-run repo-add, then sign-repo.sh\n" "$ghosts"
+
     cat > "$conf" <<EOF
 [options]
 Architecture = s390x
