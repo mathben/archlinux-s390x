@@ -630,8 +630,20 @@ mount_chroot() {
     # means the chroot needs no network at all, which is worth having: this
     # host cannot reach dev.gnupg.org, and a build that silently re-fetches
     # would be a different build.
-    mountpoint -q "$ROOT/build" || sudo mount --bind "$WORK/pkg" "$ROOT/build"
-    mountpoint -q "$ROOT/repo2" || sudo mount --bind "$REPO2"    "$ROOT/repo2"
+    # THE SOURCE OF THE BIND HAS TO EXIST, and on a machine that never ran
+    # stage 1 it does not. The mount then fails, /build stays empty inside the
+    # chroot, and every package dies on
+    #
+    #   /usr/bin/bash: line 1: cd: /build/<name>: No such file or directory
+    #
+    # which names the chroot's empty directory and not the missing host one.
+    # The recipes are cloned into $WORK/pkg later, so the directory is created
+    # here rather than assumed inherited from an earlier stage.
+    mkdir -p "$WORK/pkg"
+    mountpoint -q "$ROOT/build" || sudo mount --bind "$WORK/pkg" "$ROOT/build" \
+        || die "cannot bind $WORK/pkg onto $ROOT/build"
+    mountpoint -q "$ROOT/repo2" || sudo mount --bind "$REPO2"    "$ROOT/repo2" \
+        || die "cannot bind $REPO2 onto $ROOT/repo2"
 }
 
 umount_chroot() {
