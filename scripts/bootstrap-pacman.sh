@@ -166,6 +166,8 @@ install_host_deps() {
     #                   libsystemd-dev ships libsystemd.pc, not systemd.pc
     #   libnpth0-dev    gnupg's configure stops on "Required libraries not
     #                   found" and names npth in the lines above it
+    #   libunistring-dev  gnutls' configure stops on "library containing
+    #                   u8_normalize... no", which names a symbol, not a package
     #
     # python-is-python3, AND WHY IT IS NOT OPTIONAL.
     #
@@ -195,7 +197,7 @@ install_host_deps() {
         libtirpc-dev libnsl-dev docbook5-xml docbook-xsl-ns elinks \
         cmake python3-build python3-installer python3-pkgconfig \
         python3-setuptools python3-wheel python-is-python3 \
-        patchelf gtk-doc-tools systemd-dev libnpth0-dev \
+        patchelf gtk-doc-tools systemd-dev libnpth0-dev libunistring-dev \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
