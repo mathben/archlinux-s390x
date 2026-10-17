@@ -1381,13 +1381,27 @@ resolve_check() {
     #
     # loin d ici. Un fantôme se répare en rebâtissant la base depuis les
     # fichiers réels, puis en la re-signant.
-    local ghosts=0 entry fname
+    # A CHECK THAT READS NOTHING MUST NOT REPORT ZERO.
+    #
+    # This loop read no entry at all for as long as it existed: a quoting
+    # mistake handed bsdtar a literal pattern, 2>/dev/null swallowed its
+    # complaint, and "0 ghosts" was indistinguishable from "0 entries read".
+    # A database of hundreds of packages that yields nothing IS the failure,
+    # not the all-clear.
+    local ghosts=0 seen=0 fname
     while read -r fname; do
         [ -n "$fname" ] || continue
-        [ -e "$REPO2/$fname" ] || { printf "  GHOST %s announced by the database, absent on disk\n" "$fname"; ghosts=$((ghosts+1)); }
-    done < <(bsdtar xOzf "$REPO2/core.db.tar.gz" '"'"'*/desc'"'"' 2>/dev/null \
-             | awk '"'"'/^%FILENAME%$/{getline; print}'"'"')
-    [ "$ghosts" -eq 0 ] || printf "  %s ghost(s): rm the database and re-run repo-add, then sign-repo.sh\n" "$ghosts"
+        seen=$((seen + 1))
+        [ -e "$REPO2/$fname" ] || {
+            printf "  GHOST %s announced by the database, absent on disk\n" "$fname"
+            ghosts=$((ghosts + 1))
+        }
+    done < <(bsdtar xOzf "$REPO2/core.db.tar.gz" '*/desc' 2>/dev/null \
+             | awk '/^%FILENAME%$/{getline; print}')
+    [ "$seen" -gt 0 ] ||
+        printf "  GHOST: the database yielded no entry -- the check did not run\n"
+    [ "$ghosts" -eq 0 ] ||
+        printf "  %s ghost(s): rm the database, re-run repo-add, then sign-repo.sh\n" "$ghosts"
 
     cat > "$conf" <<EOF
 [options]
