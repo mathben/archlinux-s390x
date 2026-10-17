@@ -71,7 +71,32 @@ PKGS=(
 die() { echo "build-image: $*" >&2; exit 1; }
 say() { printf '  %s\n' "$*"; }
 
-[ -f "$CONF" ] || die "no pacman configuration at $CONF"
+# THE CONFIGURATION IS DERIVED, NOT KEPT.
+#
+# It used to be a file someone had placed in the work directory by hand:
+# unversioned, undocumented, and absent from any backup. A machine restored
+# from one stopped here, on "no pacman configuration", with nothing saying
+# what the file should contain. It holds nothing that cannot be rebuilt from
+# the repository's own path, so it is rebuilt.
+#
+# SigLevel = Never, deliberately. The packages ARE signed, but a root being
+# populated for the first time has an empty keyring, and importing the port's
+# key into it is the guest's job -- setup-guest-pacman.sh --verify. What
+# guards this step instead is sign-repo.sh having verified the repository
+# before the image is built.
+REPO2="${REPO2:-$WORK/repo2/s390x}"
+if [ ! -f "$CONF" ]; then
+    [ -d "$REPO2" ] || die "no repository at $REPO2, and no configuration at $CONF"
+    cat > "$CONF" <<CONFEOF
+[options]
+Architecture = s390x
+SigLevel = Never
+
+[core]
+Server = file://$REPO2
+CONFEOF
+    say "wrote $CONF pointing at $REPO2"
+fi
 command -v mkfs.ext4 >/dev/null || die "e2fsprogs is not installed on the host"
 [ "$(uname -m)" = s390x ] || die "the chroot step needs an s390x host"
 
