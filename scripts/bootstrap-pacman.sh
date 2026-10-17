@@ -238,7 +238,47 @@ install_host_shims() {
         | sudo tee /usr/local/lib/pkgconfig/history.pc > /dev/null
     pkg-config --exists history || {
         echo "history.pc still not visible to pkg-config" >&2; return 1; }
+
+    # THE CLASSIC INCLUDE LAYOUT, WHICH MULTIARCH NO LONGER PROVIDES.
+    #
+    # Debian and Ubuntu file the architecture-dependent headers under
+    # /usr/include/<triplet>: asm/ from the kernel headers, bits/ and gnu/ from
+    # libc, sys/sdt.h from systemtap. gcc finds them because its own search
+    # path knows the triplet. glibc does not: it compiles with -nostdinc and
+    # one -isystem /usr/include, so the first generated header stops it:
+    #
+    #   bits/sigcontext.h:30: fatal error: asm/sigcontext.h: No such file
+    #
+    # naming the architecture of the machine it is running on. A symlink per
+    # name is the bridge, and only stage 1 needs it -- stage 2 onwards build
+    # inside an Arch root where the layout is already classic.
+    #
+    # Links, not copies: the headers must track the packages that own them.
+    # Each is skipped when a real directory already sits there, so a host that
+    # files them classically is left alone.
+    local _t _n
+    _t="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+    for _n in asm bits gnu; do
+        [ -e "/usr/include/$_n" ] && continue
+        [ -d "/usr/include/$_t/$_n" ] || continue
+        sudo ln -sfn "/usr/include/$_t/$_n" "/usr/include/$_n"
+        say_shim "/usr/include/$_n -> $_t/$_n"
+    done
+    if [ ! -e /usr/include/sys/sdt.h ] && [ -e "/usr/include/$_t/sys/sdt.h" ]; then
+        sudo mkdir -p /usr/include/sys
+        sudo ln -sfn "/usr/include/$_t/sys/sdt.h" /usr/include/sys/sdt.h
+        say_shim "/usr/include/sys/sdt.h -> $_t/sys/sdt.h"
+    fi
+    # The bridge is load-bearing: glibc is the second package stage 1 builds,
+    # and nothing after it survives its absence.
+    [ -e /usr/include/asm/sigcontext.h ] || {
+        echo "host shims: asm/ is still not reachable from /usr/include" >&2
+        echo "  looked for /usr/include/$_t/asm" >&2
+        return 1
+    }
 }
+
+say_shim() { printf "  %s\n" "$*"; }
 
 build_pacman() {
     log "pacman + makepkg + repo-add"
