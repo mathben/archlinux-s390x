@@ -39,6 +39,13 @@ sudo apt install pacman-package-manager libarchive-tools fakeroot \
 `pacman-key` ; le paquet nommé `pacman` est un jeu de labyrinthe. `bsdtar`
 vient de `libarchive-tools`, `zipl` de `s390-tools`.
 
+**Cette liste sert à REPRENDRE, pas à bâtir.** Elle suffit pour servir et
+signer un dépôt restauré, ou construire une image. Une passe de construction
+veut davantage : `bootstrap-pacman.sh` installe sa propre liste de paquets
+`-dev`, bâtit pacman depuis les sources dans `/usr/local/bin` — plus récent
+que celui d'Ubuntu — et pose `CHOST`, `MAKEFLAGS` et `SRCDEST` dans
+`/etc/makepkg.conf`. Le lancer avant l'étage 1, une fois par hôte.
+
 **L'hôte n'a pas à être la même version d'Ubuntu qu'avant.** L'étage 1 avait
 été bâti contre les bibliothèques de l'hôte, mais il n'est plus nécessaire :
 `repo2` le remplace et un chroot se peuple depuis lui seul. Ce que la dérive

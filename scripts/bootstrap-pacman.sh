@@ -254,6 +254,23 @@ build_pacman() {
         -Ddoc=disabled -Ddoxygen=disabled -Di18n=false
     ninja -C build -j"$(nproc)"
     sudo ninja -C build install
+    # THE LIBRARY IS INSTALLED AND THE BINARY STILL DOES NOT START.
+    #
+    # meson puts libalpm under /usr/local/lib/<triplet>, which ld.so already
+    # searches -- but through a CACHE that still lists the distribution's older
+    # libalpm. The freshly built pacman then dies on
+    #
+    #   /usr/local/bin/pacman: error while loading shared libraries:
+    #   libalpm.so.16: cannot open shared object file
+    #
+    # naming a file that exists, in a directory that is configured. Refreshing
+    # the cache is the whole fix, and nothing else does it.
+    sudo ldconfig
+    pacman --version >/dev/null 2>&1 || {
+        echo "bootstrap-pacman: pacman is installed and does not run" >&2
+        echo "  $(command -v pacman || echo 'not in PATH')" >&2
+        exit 1
+    }
 }
 
 configure_makepkg() {
@@ -262,6 +279,14 @@ configure_makepkg() {
     # auto-detected triplet -- configure scripts are matched against it, and
     # inventing "s390x-pc-linux-gnu" breaks them.
     sudo sed -i "s|^#\?MAKEFLAGS=.*|MAKEFLAGS=\"-j$(nproc)\"|" /etc/makepkg.conf
+    # SOURCES KEPT, the same directory stage 2 and later use through their
+    # bind mount. Stage 1 builds on the host, so its downloads would otherwise
+    # land in each recipe directory and be lost with it -- and an upstream that
+    # stops serving a tarball takes that package's reproducibility with it.
+    sudo install -d -o "$(id -u)" -g "$(id -g)" "$WORK/pkg/.sources"
+    sudo sed -i "s|^#\?SRCDEST=.*|SRCDEST=$WORK/pkg/.sources|" /etc/makepkg.conf
+    grep -q '^SRCDEST=' /etc/makepkg.conf ||
+        echo "SRCDEST=$WORK/pkg/.sources" | sudo tee -a /etc/makepkg.conf >/dev/null
     # pacman refuses to initialise alpm without its database directory. The
     # error is only a warning during packaging, but it hides real ones.
     sudo mkdir -p /var/lib/pacman
