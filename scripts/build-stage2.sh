@@ -395,6 +395,26 @@ configure_chroot() {
     sudo sed -i 's|^CARCH=.*|CARCH="s390x"|; s|^CHOST=.*|CHOST="s390x-ibm-linux-gnu"|' \
         "$ROOT/etc/makepkg.conf"
     sudo sed -i "s|^#\?MAKEFLAGS=.*|MAKEFLAGS=\"-j$(nproc)\"|" "$ROOT/etc/makepkg.conf"
+    # SOURCES KEPT, BECAUSE UPSTREAMS GO AWAY.
+    #
+    # makepkg downloads into the recipe directory and the chroot is torn down
+    # after every pass, so each tarball is fetched and discarded. The port then
+    # depends, for ever, on every upstream still serving the same bytes at the
+    # same URL. One already does not:
+    #
+    #   libaio: curl: (22) The requested URL returned error: 404
+    #
+    # upstream.lock pins the RECIPE commit, which protects reproducibility and
+    # freezes a URL at the same time. Only a copy of the bytes closes that.
+    #
+    # /build is the bind mount shared with the host, so a source written there
+    # outlives the chroot. One directory for every package and every stage:
+    # makepkg skips a download whose checksum already matches, which makes the
+    # second pass faster as a side effect rather than as the point.
+    sudo install -d -o "$BUILD_UID" -g "$BUILD_GID" "$ROOT/build/.sources"
+    sudo sed -i 's|^#\?SRCDEST=.*|SRCDEST=/build/.sources|' "$ROOT/etc/makepkg.conf"
+    grep -q '^SRCDEST=' "$ROOT/etc/makepkg.conf" ||
+        echo 'SRCDEST=/build/.sources' | sudo tee -a "$ROOT/etc/makepkg.conf" >/dev/null
     # !debug and !lto, matching what stage 1 used. Arch's defaults enable both;
     # turning them on here would change what is being compared between the two
     # stages, and comparing them is the whole point.
