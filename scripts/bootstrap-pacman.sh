@@ -159,6 +159,16 @@ install_host_deps() {
     # exists as an Ubuntu -dev package, so the queue terminates. The rule is
     # about queues with no end, like dbus asking for a third documentation
     # tool that needed Qt.
+    # python-is-python3, AND WHY IT IS NOT OPTIONAL.
+    #
+    # On Arch, `python` IS python3; Ubuntu ships only `python3`. Several
+    # recipes call the bare name -- gcc among them, in package_gcc(). The
+    # compile then succeeds ENTIRELY and packaging dies on one of its last
+    # lines, hours in:
+    #
+    #   PKGBUILD: line 326: python: command not found
+    #
+    # which reads like a missing interpreter rather than a missing alias.
     sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq \
         meson ninja-build pkg-config gettext \
         libarchive-dev libcurl4-openssl-dev libgpgme-dev libssl-dev \
@@ -176,7 +186,7 @@ install_host_deps() {
         itstool asciidoctor \
         libtirpc-dev libnsl-dev docbook5-xml docbook-xsl-ns elinks \
         cmake python3-build python3-installer python3-pkgconfig \
-        python3-setuptools python3-wheel \
+        python3-setuptools python3-wheel python-is-python3 \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
