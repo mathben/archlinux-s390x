@@ -8,7 +8,7 @@ fonctionne, pas quand les paquets compilent.
 | | |
 |---|---|
 | Machine | la VM de developpement s390x, Ubuntu, joignable par un rebond ssh |
-| Dépôt du portage | `~/git/archlinux-s390x` — **72 commits, aucun distant** |
+| Dépôt du portage | `~/git/archlinux-s390x` — trois distants : deux GitHub, une forge |
 | Espace de travail | `~/work/arch-s390x` |
 | Dépôt étage 1 | `~/work/arch-s390x/repo/s390x` |
 | Dépôt étage 2 | `~/work/arch-s390x/repo2/s390x` |
@@ -21,6 +21,29 @@ fonctionne, pas quand les paquets compilent.
 
 **Ne pas toucher** : `/var/lib/libvirt` (VM d'autres travaux). Le `/tmp` de
 cette machine est partagé **et** en tmpfs — utiliser un sous-répertoire à soi.
+
+## Ce que l'hôte doit porter
+
+Le portage bâtit ses paquets dans un chroot peuplé depuis `repo2`, mais
+l'amorçage de ce chroot, la signature et l'amorçage des VM se font avec des
+outils de l'HÔTE. Un hôte neuf n'en a aucun, et rien ne le dit avant que
+`build-stage2.sh` échoue sur `makepkg: command not found`.
+
+```bash
+sudo apt install pacman-package-manager libarchive-tools fakeroot \
+     build-essential arch-install-scripts s390-tools \
+     qemu-system-s390x qemu-utils libvirt-clients libvirt-daemon-system virtinst
+```
+
+`pacman-package-manager` porte `pacman`, `makepkg`, `repo-add` et
+`pacman-key` ; le paquet nommé `pacman` est un jeu de labyrinthe. `bsdtar`
+vient de `libarchive-tools`, `zipl` de `s390-tools`.
+
+**L'hôte n'a pas à être la même version d'Ubuntu qu'avant.** L'étage 1 avait
+été bâti contre les bibliothèques de l'hôte, mais il n'est plus nécessaire :
+`repo2` le remplace et un chroot se peuple depuis lui seul. Ce que la dérive
+de l'hôte peut encore toucher — version de `pacman`, de `makepkg` — n'a pas
+été mesuré sur deux versions différentes.
 
 ## Le chemin complet
 
