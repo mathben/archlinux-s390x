@@ -124,7 +124,14 @@ substitute "$TPL/arch-s390x.xml.in" > "$tmp"
 # exists with uuid ...` -- because the name is taken by what is, to libvirt, a
 # different machine. Re-running this script is the normal way to change the
 # domain, so it has to be the case that works.
-_uuid="$(virsh --connect "$CONNECT" domuuid "$NAME" 2>/dev/null | tr -d '[:space:]')"
+# THE FIRST INSTALL IS THE ONE THAT HAS NO UUID TO KEEP.
+#
+# `virsh domuuid` exits non-zero when the domain is unknown, and under
+# `set -o pipefail` that failure becomes the pipeline's, which `set -e`
+# turns into the end of the script -- silently, one line before `define`.
+# A guard that preserves an existing identity must tolerate there being
+# none yet, or the script can only ever redefine, never install.
+_uuid="$(virsh --connect "$CONNECT" domuuid "$NAME" 2>/dev/null | tr -d '[:space:]' || true)"
 if [ -n "$_uuid" ]; then
     sed -i "s|<name>$NAME</name>|<name>$NAME</name>\n  <uuid>$_uuid</uuid>|" "$tmp"
     say "keeping uuid ${_uuid%%-*}…"
@@ -134,7 +141,7 @@ fi
 # every ssh config and bookmark pointing at the guest is wrong -- a redefine
 # that moves the machine is a redefine nobody dares run.
 _mac="$(virsh --connect "$CONNECT" dumpxml --inactive "$NAME" 2>/dev/null \
-        | grep -o "mac address='[^']*'" | head -1 | cut -d"'" -f2)"
+        | grep -o "mac address='[^']*'" | head -1 | cut -d"'" -f2 || true)"
 if [ -n "$_mac" ]; then
     sed -i "s|<interface type='network'>|<interface type='network'>\n      <mac address='$_mac'/>|" "$tmp"
     say "keeping mac $_mac"
