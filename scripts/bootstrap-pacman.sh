@@ -202,6 +202,8 @@ install_host_deps() {
     #                     PLUGINS, named in a recipe's build-system.requires
     #                     and reported the same way. Each plugin a recipe
     #                     asks for is a separate package
+    #   python3-semantic-version  maturin's own build dependency, reported
+    #                     beside the backend: "semantic_version<3,>=2.8.2"
     #   python3-maturin   the backend of every wheel wrapping a Rust
     #                     extension; without it pyproject.toml's
     #                     "requires = ["maturin"]" cannot be honoured
@@ -251,7 +253,7 @@ install_host_deps() {
         flit python3-hatchling python3-poetry-core \
         python3-tomlkit python3-editables \
         python3-hatch-vcs python3-hatch-fancy-pypi-readme python3-maturin \
-        python3-fastjsonschema \
+        python3-fastjsonschema python3-semantic-version \
         elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
@@ -408,12 +410,15 @@ install_host_shims() {
 #   python-setuptools-scm     the distribution's predates the floor recipes
 #                             declare
 #   python-setuptools-rust    same, and maturin builds against it
+#   python-maturin            the distribution's is below the floor recipes
+#                             wrapping a Rust extension declare
 #
 # Build order already satisfies the dependency: the provider is listed before
 # its consumers in STAGE1_PACKAGES.
 HOST_PYTHON_MODULES="python-calver python-trove-classifiers
                     python-packaging python-vcs-versioning
-                    python-setuptools-scm python-setuptools-rust"
+                    python-setuptools-scm python-setuptools-rust
+                    python-maturin"
 
 # Takes a package name, installs its python module on the host when the name is
 # listed above, and returns 0 otherwise. Reads the newest matching archive in
