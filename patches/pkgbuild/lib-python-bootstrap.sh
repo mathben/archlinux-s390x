@@ -76,4 +76,53 @@ grep -q "import build, installer" PKGBUILD || {
 # nothing -- these PKGBUILDs are not required to have both halves.
 grep -q "bootstrap.build" PKGBUILD || {
     echo "python bootstrap: no bootstrap.build branch in this PKGBUILD" >&2; exit 1; }
-echo "$(basename "$PWD"): _bootstrap=1 (Arch's vendored builder)"
+
+# UNE SOMME PAR SOURCE, SUR LA BRANCHE DU BATISSEUR.
+#
+# source= est conditionnel dans ces recettes : deux entrees sur le chemin
+# normal, huit sur celui du batisseur embarque. Les tableaux de sommes, eux,
+# ne le sont pas et decrivent le chemin normal. makepkg compare les TAILLES
+# avant toute empreinte :
+#
+#   ==> ERROR: Integrity checks (b2) differ in size from the source array.
+#
+# Invisible a l'etage 1, ou la sonde donne 0 et ou les deux tableaux
+# s'accordent ; fatal dans le chroot, ou elle donne 1. C'est la raison d'etre
+# de ce fichier partage : la faute est commune aux six, le correctif aussi.
+#
+# Les huit sources sont des depots git, et makepkg n'attend que SKIP d'une
+# source VCS -- son contenu est fixe par l'etiquette ou le commit, pas par une
+# empreinte d'archive. Chaque tableau PRESENT est refait depuis source=, pour
+# qu'une recette qui change d'algorithme ou une source ajoutee en amont
+# n'ouvrent pas le meme trou.
+python3 - <<'ZZSUMS'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+m = re.search(r'^[a-z_][a-z0-9_]*\(\)\s*\{', s, re.M)
+assert m, "python bootstrap: aucune fonction ou ancrer le recalcul des sommes"
+add = (
+    "# Une somme SKIP par source sur la branche du batisseur : voir\n"
+    "# patches/pkgbuild/lib-python-bootstrap.sh.\n"
+    "if (( _bootstrap != 0 )); then\n"
+    "  for _a in md5sums sha1sums sha224sums sha256sums sha384sums \\\n"
+    "            sha512sums b2sums; do\n"
+    "    declare -p \"$_a\" >/dev/null 2>&1 || continue\n"
+    "    eval \"$_a=( \\$(printf 'SKIP %.0s' \\\"\\${source[@]}\\\") )\"\n"
+    "  done\n"
+    "  unset _a\n"
+    "fi\n\n"
+)
+s = s[:m.start()] + add + s[m.start():]
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZSUMS
+grep -q "SKIP %.0s" PKGBUILD || {
+    echo "python bootstrap: le recalcul des sommes n a pas ete pose" >&2; exit 1; }
+# Le controle qui compte, et il doit valoir sur la branche REELLEMENT prise.
+bash -c 'CARCH=s390x; source ./PKGBUILD >/dev/null 2>&1
+  for _a in md5sums sha1sums sha224sums sha256sums sha384sums sha512sums b2sums; do
+      declare -p "$_a" >/dev/null 2>&1 || continue
+      eval "n=\${#$_a[@]}"
+      [ "$n" -eq "${#source[@]}" ] || {
+          echo "python bootstrap: ${#source[@]} sources pour $n $_a" >&2; exit 1; }
+  done' || exit 1
+echo "$(basename "$PWD"): _bootstrap=1 (Arch's vendored builder), sommes recalculees"

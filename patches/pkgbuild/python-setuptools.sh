@@ -39,42 +39,8 @@ grep -qE "^_bootstrap=1$" PKGBUILD || {
     echo "python-setuptools: _bootstrap n est pas force" >&2; exit 1; }
 echo "python-setuptools: _bootstrap=1 sans condition"
 
-# LES SOMMES D'AMONT DECRIVENT L'AUTRE BRANCHE.
-#
-# source= est conditionnel : deux entrees quand le chemin normal est pris,
-# huit quand c'est celui du batisseur embarque -- que ce paquet prend
-# toujours, pour la raison ci-dessus. b2sums, lui, ne l'est pas et garde ses
-# deux entrees. makepkg ne compare pas les empreintes avant d'avoir compare
-# les TAILLES :
-#
-#   ==> ERROR: Integrity checks (b2) differ in size from the source array.
-#
-# Les huit sources sont toutes des depots git, et pour une source VCS makepkg
-# n'attend que SKIP : ce qui fixe le contenu est l'etiquette ou le commit, pas
-# une empreinte d'archive. Le tableau est construit depuis source= plutot
-# qu'ecrit a huit entrees, pour qu'une source ajoutee en amont n'ouvre pas le
-# meme trou.
-python3 - <<'ZZPY'
-import io, re
-s = io.open("PKGBUILD", encoding="utf-8").read()
-anchor = "\nprepare() {"
-assert s.count(anchor) == 1, "setuptools: une seule fonction prepare attendue"
-add = ("\n# Une somme par source, SKIP pour chacune : voir\n"
-       "# patches/pkgbuild/python-setuptools.sh.\n"
-       "if (( _bootstrap != 0 )); then\n"
-       "  b2sums=($(printf 'SKIP %.0s' \"${source[@]}\"))\n"
-       "fi\n")
-s = s.replace(anchor, add + anchor, 1)
-io.open("PKGBUILD", "w", encoding="utf-8").write(s)
-ZZPY
-grep -q "printf 'SKIP %.0s'" PKGBUILD || {
-    echo "python-setuptools: le recalcul des sommes n a pas ete pose" >&2; exit 1; }
-# Le controle qui compte : les deux tableaux doivent avoir la meme taille une
-# fois le PKGBUILD lu, ce que makepkg verifiera de toute facon.
-bash -c 'CARCH=s390x; source ./PKGBUILD >/dev/null 2>&1
-  [ "${#source[@]}" -eq "${#b2sums[@]}" ] || {
-      echo "python-setuptools: ${#source[@]} sources pour ${#b2sums[@]} sommes" >&2; exit 1; }' || exit 1
-echo "python-setuptools: une somme SKIP par source de la branche bootstrap"
+# Les sommes de la branche du batisseur sont recalculees par
+# lib-python-bootstrap.sh, qui porte la meme faute pour les six.
 
 # LE CHEMIN DEVINE, TROISIEME FOIS -- voir patches/pkgbuild/python-installer.sh
 # et python-certifi.sh, qui portent la meme correction.
