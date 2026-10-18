@@ -104,6 +104,44 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+## 1 bis. Le miroir des recettes
+
+Les 229 recettes viennent d'un seul hôte. Quand il tombe, tout paquet dont
+la recette n'est pas déjà clonée s'arrête — mesuré : aucune réponse ICMP,
+443 fermé, pendant des heures, quand GitHub et GNU répondaient en 200 ms.
+
+Le miroir s'en affranchit. Depuis une machine qui atteint l'amont :
+
+```bash
+# un clone NU par recette : historique complet, pas la tête du jour
+git clone --mirror https://gitlab.archlinux.org/archlinux/packaging/packages/<nom>.git \
+    recettes-arch-s390x/<nom>.git
+```
+
+**Ce qui fait la différence entre un miroir utile et une copie inutile** :
+chaque commit nommé par `upstream.lock` doit s'y trouver. Un `--depth 1`
+donne les recettes d'aujourd'hui, pas celles contre lesquelles les crochets
+sont écrits. Le contrôle, dépôt par dépôt :
+
+```bash
+git --git-dir recettes-arch-s390x/<nom>.git cat-file -e <commit-du-verrou>^{commit}
+```
+
+Puis on branche le portage dessus, aux deux étages :
+
+```bash
+PKG_GIT_BASE="file://$HOME/work/arch-s390x/recettes-arch-s390x" \
+    bash scripts/build-stage1.sh
+```
+
+**Vérifié** : 229 dépôts nus, 55 Mo, et les 186 commits épinglés tous
+présents. Clone, `--depth 1` et résolution du commit fonctionnent en local.
+
+**L'amont compte les requêtes.** Six clones en parallèle font répondre
+`HTTP 429 Too Many Requests` à partir du deux-centième dépôt environ, et des
+réessais rapides aggravent ce qu'ils tentent de réparer. Deux en parallèle,
+et une attente qui se compte en minutes sur un 429.
+
 ## 4 bis. Un échec sur deux n'est pas un bogue
 
 Relancer d'abord, diagnostiquer ensuite. Sur une passe observée, la moitié
