@@ -39,12 +39,19 @@ python3 - <<'ZZPY'
 import io
 s = io.open("PKGBUILD", encoding="utf-8").read()
 
-old = """prepare() {
-  cd llvm-project-$pkgver.src/compiler-rt
-  mkdir build
-}"""
-new = """prepare() {
-  cd llvm-project-$pkgver.src/compiler-rt
+# ANCRÉ SUR UNE LIGNE, PAS SUR UN BLOC.
+#
+# Ce crochet remplaçait les quatre lignes entières de prepare(). L amont y a
+# inséré un `patch -Np1 -i ...`, et le bloc littéral a cessé d exister :
+#
+#   AssertionError: compiler-rt: prepare() introuvable
+#
+# après des heures de construction, en accusant une fonction qui est bien là.
+# Seule `mkdir build` compte ici : le correctif se pose juste avant elle, et
+# ce que l amont ajoute autour survit.
+anchor = "\n  mkdir build\n"
+assert s.count(anchor) == 1, "compiler-rt: la ligne `mkdir build` n est pas unique"
+fix = """
   # s390x has IEEE 128-bit complex through long double and no __float128;
   # llvm-libc's GNU branch accepts either signal and then requires the type
   # that is missing. See patches/pkgbuild/compiler-rt.sh.
@@ -57,9 +64,9 @@ new = """prepare() {
     ../libc/include/llvm-libc-macros/cfloat128-macros.h \\
     && { echo 'compiler-rt: la condition trop large survit' >&2; exit 1; }
   mkdir build
-}"""
-assert s.count(old) == 1, "compiler-rt: prepare() introuvable"
-s = s.replace(old, new, 1)
+"""
+s = s.replace(anchor, fix, 1)
+
 
 io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 ZZPY
