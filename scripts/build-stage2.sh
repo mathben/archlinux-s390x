@@ -1096,7 +1096,10 @@ stage2_build() {
         rm -rf "$dir"; mkdir -p "$dir"
         cp -r "$HERE/../pkgbuild/$name/." "$dir/"
     elif [ ! -d "$dir/.git" ]; then
-        local url="https://gitlab.archlinux.org/archlinux/packaging/packages/$name.git"
+        # La même base que l étage 1, et surchargeable pour la même raison :
+        # elle était écrite en dur ici, donc un miroir local branché sur
+        # bootstrap-pacman.sh ne servait qu à moitié.
+        local url="${PKG_GIT_BASE:-https://gitlab.archlinux.org/archlinux/packaging/packages}/$name.git"
         local sha=""
         [ -f "$HERE/upstream.lock" ] &&
             sha=$(awk -v n="$name" '$1 == n {print $2}' "$HERE/upstream.lock")

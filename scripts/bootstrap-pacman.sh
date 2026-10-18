@@ -20,7 +20,18 @@ PATCH_DIR="${PATCH_DIR:-$HERE_DIR/../patches/pkgbuild}"
 WORK="${WORK:-$HOME/work/arch-s390x}"
 REPO="${REPO:-$WORK/repo/s390x}"
 PACMAN_GIT="https://gitlab.archlinux.org/pacman/pacman.git"
-PKG_GIT_BASE="https://gitlab.archlinux.org/archlinux/packaging/packages"
+# SURCHARGEABLE, parce qu un seul hôte sert les 229 recettes.
+#
+# Quand il tombe -- mesuré : aucune réponse ICMP, 443 fermé, pendant que
+# GitHub et GNU répondaient en 200 ms -- tout paquet dont la recette n est
+# pas déjà clonée s arrête. Un miroir local de dépôts nus se branche ici :
+#
+#   PKG_GIT_BASE="file://$HOME/work/arch-s390x/recettes-arch-s390x" \
+#       bash scripts/build-stage1.sh
+#
+# Le miroir se fabrique avec un clone --mirror par recette ; ce qui compte
+# est qu il porte les commits d upstream.lock, pas seulement les HEAD du jour.
+PKG_GIT_BASE="${PKG_GIT_BASE:-https://gitlab.archlinux.org/archlinux/packaging/packages}"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
