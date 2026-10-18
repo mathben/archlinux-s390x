@@ -38,3 +38,68 @@ grep -q "import build, installer" PKGBUILD && {
 grep -qE "^_bootstrap=1$" PKGBUILD || {
     echo "python-setuptools: _bootstrap n est pas force" >&2; exit 1; }
 echo "python-setuptools: _bootstrap=1 sans condition"
+
+# LES SOMMES D'AMONT DECRIVENT L'AUTRE BRANCHE.
+#
+# source= est conditionnel : deux entrees quand le chemin normal est pris,
+# huit quand c'est celui du batisseur embarque -- que ce paquet prend
+# toujours, pour la raison ci-dessus. b2sums, lui, ne l'est pas et garde ses
+# deux entrees. makepkg ne compare pas les empreintes avant d'avoir compare
+# les TAILLES :
+#
+#   ==> ERROR: Integrity checks (b2) differ in size from the source array.
+#
+# Les huit sources sont toutes des depots git, et pour une source VCS makepkg
+# n'attend que SKIP : ce qui fixe le contenu est l'etiquette ou le commit, pas
+# une empreinte d'archive. Le tableau est construit depuis source= plutot
+# qu'ecrit a huit entrees, pour qu'une source ajoutee en amont n'ouvre pas le
+# meme trou.
+python3 - <<'ZZPY'
+import io, re
+s = io.open("PKGBUILD", encoding="utf-8").read()
+anchor = "\nprepare() {"
+assert s.count(anchor) == 1, "setuptools: une seule fonction prepare attendue"
+add = ("\n# Une somme par source, SKIP pour chacune : voir\n"
+       "# patches/pkgbuild/python-setuptools.sh.\n"
+       "if (( _bootstrap != 0 )); then\n"
+       "  b2sums=($(printf 'SKIP %.0s' \"${source[@]}\"))\n"
+       "fi\n")
+s = s.replace(anchor, add + anchor, 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q "printf 'SKIP %.0s'" PKGBUILD || {
+    echo "python-setuptools: le recalcul des sommes n a pas ete pose" >&2; exit 1; }
+# Le controle qui compte : les deux tableaux doivent avoir la meme taille une
+# fois le PKGBUILD lu, ce que makepkg verifiera de toute facon.
+bash -c 'CARCH=s390x; source ./PKGBUILD >/dev/null 2>&1
+  [ "${#source[@]}" -eq "${#b2sums[@]}" ] || {
+      echo "python-setuptools: ${#source[@]} sources pour ${#b2sums[@]} sommes" >&2; exit 1; }' || exit 1
+echo "python-setuptools: une somme SKIP par source de la branche bootstrap"
+
+# LE CHEMIN DEVINE, TROISIEME FOIS -- voir patches/pkgbuild/python-installer.sh
+# et python-certifi.sh, qui portent la meme correction.
+#
+# package() demande a l'interpreteur ou vont les paquets et efface les entrees
+# Windows la-bas :
+#
+#   local site_packages=$(python -c "import site; print(site.getsitepackages()[0])")
+#   rm "$pkgdir/$site_packages/$_name"/*.exe
+#
+# Les deux n'ont aucune raison de s'accorder. Le batisseur embarque installe
+# selon son propre schema, pas selon ce que site.py annonce, et le motif ne
+# correspond alors a rien : il passe tel quel, et rm s'arrete sur un chemin
+# portant une etoile non developpee. Chercher les fichiers la ou ils sont ne
+# demande aucun interpreteur et vaut dans toutes les dispositions.
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = 'rm "$pkgdir/$site_packages/$_name"/*.exe'
+assert s.count(old) == 1, "setuptools: la ligne rm des .exe est introuvable"
+s = s.replace(old, 'find "$pkgdir" -path "*/$_name/*.exe" -delete', 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q 'site_packages/\$_name' PKGBUILD && {
+    echo "python-setuptools: le chemin devine survit" >&2; exit 1; }
+grep -q 'path "\*/\$_name/\*.exe" -delete' PKGBUILD || {
+    echo "python-setuptools: la recherche n a pas ete posee" >&2; exit 1; }
+echo "python-setuptools: .exe retires par find, pas par un chemin devine"
