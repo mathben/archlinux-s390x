@@ -71,7 +71,7 @@ EL_REPO_SERVER=<hôte:port> EL_VERIFY_REPO=1 \
 bash scripts/build-erplibre-image.sh
 
 # 4. La faire tourner
-bash scripts/install-libvirt-domain.sh && virsh start arch-s390x
+bash scripts/install-libvirt-domain.sh && virsh --connect qemu:///system start arch-s390x
 ```
 
 Le déploiement depuis ERPLibre prend le relais à l étape 4 :
@@ -113,9 +113,13 @@ La VM est un domaine libvirt, défini une fois pour toutes :
 
 ```bash
 bash scripts/install-libvirt-domain.sh   # définit, pose le crochet, autostart
-virsh start arch-s390x
-virsh console arch-s390x                 # Ctrl-] pour se détacher
-virsh domifaddr arch-s390x               # l adresse que le DHCP a donnée
+# --connect qemu:///system, comme le script. Sans lui, virsh choisit son URI
+# par défaut selon l appartenance de l utilisateur au groupe libvirt et selon
+# que libvirtd tourne : il peut répondre une liste VIDE, sans erreur, pour un
+# domaine qui existe. Être explicite retire cette variable du problème.
+virsh --connect qemu:///system start arch-s390x
+virsh --connect qemu:///system console arch-s390x      # Ctrl-] pour se détacher
+virsh --connect qemu:///system domifaddr arch-s390x    # l adresse donnée par DHCP
 ```
 
 `scripts/run-vm.sh detach` amorce la même image hors libvirt, pour essayer une
@@ -131,7 +135,12 @@ contamination que tout l amorçage a servi à retirer.
 ```bash
 bash scripts/sign-repo.sh                                  # signer, une fois
 bash scripts/serve-repo.sh install                         # servir, une fois
-bash scripts/setup-guest-pacman.sh <hôte:port> --verify     # DANS l invité
+# DANS l invité -- et l image ne porte pas ce script. build-image.sh ne l y
+# copie que si EL_REPO_SERVER est posé, l exécute, puis l efface. Sur une
+# image bâtie sans cette variable, il faut l y porter :
+#   scp scripts/setup-guest-pacman.sh root@<invité>:/tmp/
+#   ssh root@<invité> bash /tmp/setup-guest-pacman.sh <hôte:port> --verify
+bash /tmp/setup-guest-pacman.sh <hôte:port> --verify
 ```
 
 `--verify` prend la clé du portage dans le trousseau de pacman, la signe

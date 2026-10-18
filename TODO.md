@@ -28,7 +28,10 @@ time — twenty minutes per attempt on this hardware.
 
 Already re-enablable, no code change needed:
 
-    EL_GCC_JIT=1 bash scripts/build-stage1.sh
+    # Name gcc. Without an argument the pass walks the whole list, finds gcc
+    # in the state file, prints "gcc already built, skipping", and the switch
+    # is never read. An explicit request outranks the state file.
+    EL_GCC_JIT=1 bash scripts/build-stage1.sh gcc
 
 **To close:** run one build with the switch on and confirm the package
 appears. Nothing else is required.
