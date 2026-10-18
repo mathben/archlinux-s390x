@@ -1473,6 +1473,23 @@ main() {
         echo "  or rebuild packages:"
         echo "    bash $0 texinfo perl m4 autoconf ..."
         echo "    bash $0 --all      # all ${#STAGE1_PACKAGES[@]}, in order"
+        # THE MOUNTS MUST OUTLIVE THIS RETURN.
+        #
+        # Called with no argument -- the documented way to prepare the chroot
+        # and look inside it -- this branch prints the command to enter it and
+        # returns. The EXIT trap then unmounted proc, sys, dev, /build and
+        # /repo2, so the command printed one line earlier landed in a chroot
+        # with an EMPTY /build, and the first makepkg died on
+        #
+        #   /usr/bin/bash: line 1: cd: /build/<name>: No such file or directory
+        #
+        # the same sentence a missing host directory produces -- sending the
+        # reader to look at $WORK/pkg, which is perfectly populated.
+        #
+        # Leaving them mounted is safe: make_rootfs starts by unmounting and
+        # checks with findmnt, so the next pass takes them back cleanly.
+        trap - EXIT
+        echo "  the chroot stays mounted; the next pass remounts it cleanly"
         return 0
     fi
     touch "$STATE2"

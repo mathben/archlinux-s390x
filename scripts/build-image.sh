@@ -27,7 +27,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="${WORK:-$HOME/work/arch-s390x}"
 IMG="${IMG:-$WORK/arch-s390x.img}"
 MNT="${MNT:-$WORK/mnt-image}"
-CONF="${CONF:-$WORK/pacman-test.conf}"
+# A CONFIGURATION OF ITS OWN, NOT THE ONE test-chroot.sh WRITES.
+#
+# Both scripts used $WORK/pacman-test.conf. test-chroot.sh rewrites it
+# UNCONDITIONALLY pointing at the stage-1 repository; this script wrote it
+# only when absent and said nothing when it reused one. RELAIS.md asks for
+# test-chroot.sh and then for this script, so following the documented order
+# built the distributable image from STAGE 1 -- which the same document
+# forbids in as many words. The failure surfaced as "target not found" for a
+# package that exists in repo2, far from the file that chose the wrong one.
+CONF="${CONF:-$WORK/pacman-image.conf}"
 CACHE="${CACHE:-$WORK/pacman-el.cache}"
 SIZE="${SIZE:-24G}"
 LABEL="${LABEL:-ARCH_S390X}"
@@ -97,6 +106,9 @@ Server = file://$REPO2
 CONFEOF
     say "wrote $CONF pointing at $REPO2"
 fi
+# Announced on EVERY run, not only when the file is written. Reusing a
+# configuration silently is how an image gets built from the wrong stage.
+say "packages come from $(awk -F'file://' '/^Server/{print $2; exit}' "$CONF")"
 command -v mkfs.ext4 >/dev/null || die "e2fsprogs is not installed on the host"
 [ "$(uname -m)" = s390x ] || die "the chroot step needs an s390x host"
 
