@@ -158,6 +158,35 @@ lecteur ne peut pas distinguer une régression de l'état normal.
 l'étage 2, la MÊME commande doit être propre. C'est la comparaison qui prouve
 quelque chose, pas le relevé isolé.
 
+### Lire `compare-stages.sh` : ce que l'étage 2 répare, chiffré
+
+La comparaison ne rend pas un verdict binaire utile tant que l'étage 2 n'a pas
+tourné sur le même étage 1. Elle montre en revanche, en clair, CE QUE l'étage 2
+apporte — et trois mécanismes expliquent la quasi-totalité des écarts :
+
+- **La disposition Python.** Des centaines de chemins sous
+  `usr/lib/python3/` (dist-packages) n'existent que du côté étage 1. L'étage 2
+  les range sous `usr/lib/python3.<x>/site-packages`.
+- **La version d'interpréteur captée.** Des chemins sous
+  `usr/lib/python3.<version de l'hôte>` n'apparaissent que du côté étage 1,
+  alors que les DEUX dépôts livrent le même python. Ce n'est donc pas une
+  dérive d'amont : c'est l'interpréteur de l'hôte qui s'est invité.
+- **Le répertoire multiarch.** Des chemins sous
+  `usr/lib/<triplet>-linux-gnu`, la disposition Debian, du seul côté étage 1.
+
+Côté déclarations, l'écart dominant est que l'étage 1 annonce un soname NU
+— `provides = libacl.so` — là où l'étage 2 l'annonce VERSIONNÉ —
+`libacl.so=1-64`. Systématique, et sans rapport avec un paquet en
+particulier.
+
+**Ce qui mérite un regard** est le reste : un soname qu'un seul étage
+fournit, une dépendance qu'un seul déclare. Les trier revient à retirer les
+groupes où les deux côtés portent les mêmes noms à la version près :
+
+```bash
+grep -E "^[<>] (provides|depend) = " ~/work/arch-s390x/compare-stages.txt
+```
+
 ### L'épreuve RESOLVE voit ce que le registre ne voit pas
 
 Comparer `stage1.state` à `STAGE1_PACKAGES` dit ce qui n'a pas BÂTI. Cela ne
