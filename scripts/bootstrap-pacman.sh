@@ -474,7 +474,24 @@ build_package() {
     # artefact back into the repository. log-libselinux.txt was 119 KB of
     # util-linux. The lesson is the repository's oldest one, one level up:
     # an exit code proves nothing, and neither does a log file's NAME.
-    if [ ! -d "$WORK/pkg/$name" ]; then
+    # A RECIPE THIS REPOSITORY WRITES ITSELF IS NOT UPSTREAM'S.
+    #
+    # pkgbuild/<name>/ holds the PKGBUILDs no Arch package can provide -- zipl
+    # exists only on this architecture, so there is nothing to clone and
+    # nothing to diff against. Stage 2 has read them since it was written;
+    # stage 1 did not, and asked gitlab for a project that does not exist:
+    #
+    #   fatal: could not read Username for 'https://gitlab.archlinux.org'
+    #
+    # which reads as a credentials problem, or a network one, and is neither.
+    # Copied rather than cloned, and deliberately NOT a fallback for a failed
+    # clone: a network error must not silently build something else.
+    if [ -f "$HERE_DIR/../pkgbuild/$name/PKGBUILD" ]; then
+        rm -rf "$WORK/pkg/$name"
+        mkdir -p "$WORK/pkg/$name"
+        cp -r "$HERE_DIR/../pkgbuild/$name/." "$WORK/pkg/$name/"
+        echo "  local PKGBUILD for $name"
+    elif [ ! -d "$WORK/pkg/$name" ]; then
         GIT_TERMINAL_PROMPT=0 \
             git clone --depth 1 "$PKG_GIT_BASE/$name.git" "$WORK/pkg/$name" || {
             rm -rf "$WORK/pkg/$name"
