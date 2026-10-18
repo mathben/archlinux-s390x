@@ -194,6 +194,10 @@ install_host_deps() {
     #   flit              flit_core, for every wheel built with it
     #   python3-hatchling hatchling, same role
     #   python3-poetry-core  poetry.core, same role
+    #   python3-tomlkit   and python3-editables: hatchling's own build
+    #                     dependencies. Installing hatchling is not enough --
+    #                     it reports "Missing dependencies: tomlkit>=0.11.1"
+    #                     when asked to build a wheel
     #   elfutils          eu-strip, which debugedit's configure requires:
     #                     "eu-strip needed by find-debuginfo"
     #   libedit-dev       openssh's configure stops on "libedit not found"
@@ -235,6 +239,7 @@ install_host_deps() {
         python3-setuptools python3-wheel python-is-python3 \
         patchelf gtk-doc-tools systemd-dev libnpth0-dev libunistring-dev \
         flit python3-hatchling python3-poetry-core \
+        python3-tomlkit python3-editables \
         elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
