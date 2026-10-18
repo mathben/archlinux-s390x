@@ -104,6 +104,30 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+## 4 bis. Un échec sur deux n'est pas un bogue
+
+Relancer d'abord, diagnostiquer ensuite. Sur une passe observée, la moitié
+des échecs venaient du réseau et se sont effacés d'eux-mêmes à la relance :
+un `curl` qui ne connecte pas en 114 ms, un miroir qui rend un 5xx, un clone
+interrompu. Le journal dit `FAIL <paquet>` du même ton que pour un vrai
+défaut, et rien ne distingue les deux à l'œil.
+
+Les séparer coûte une commande :
+
+```bash
+grep -qE "unable to access|Failed to connect|returned error: 5|Could not resolve" \
+    ~/work/arch-s390x/log-<paquet>.txt && echo RESEAU || echo structurel
+```
+
+**LES RECETTES VIENNENT TOUTES D'UN SEUL HÔTE.** Les 235 recettes sont
+clonées depuis le GitLab d'Arch. Quand il tombe — mesuré : ICMP sans réponse,
+HTTP qui expire à 15 s, pendant que GitHub et GNU répondent en 200 ms —
+chaque paquet dont la recette n'est pas déjà clonée échoue, et une passe
+entière n'apprend rien. Une recette déjà clonée dans `~/work/arch-s390x/pkg/`
+continue de bâtir : ce répertoire est, de fait, le miroir des recettes.
+
+Ne pas relancer en boucle pendant une panne d'amont : attendre qu'il réponde.
+
 ## 5. Ce qui échoue, et ce que le message veut dire
 
 | À l'écran | La cause réelle |
