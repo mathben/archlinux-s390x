@@ -60,7 +60,7 @@ ls -l /usr/include/asm /usr/include/sys/sdt-config.h
 `CHOST` doit être `s390x-ibm-linux-gnu`, le triplet canonique. Celui d'Ubuntu,
 `s390x-linux-gnu`, fait échouer gcc sur son propre empaquetage.
 
-## 2. Étage 1 — 92 paquets
+## 2. Étage 1 — 228 paquets
 
 ```bash
 EL_NOCHECK=1 bash scripts/build-stage1.sh > ~/work/arch-s390x/etage1.log 2>&1
@@ -79,9 +79,33 @@ miroir local, et il est la seule protection contre un amont qui disparaît.
 `libaio` a déjà disparu du sien.
 
 Reprendre après un arrêt : relancer la même commande. Les paquets déjà bâtis
-sont sautés. Pour en forcer un, retirer son nom du registre d'état.
+sont sautés. Pour en forcer un, le NOMMER — ne jamais éditer le registre
+d'état, qui est la mémoire du portage :
 
-**Vérifié jusqu'à gcc inclus** au moment d'écrire ; la suite ne l'est pas.
+```bash
+bash scripts/build-stage1.sh gcc        # un nom passe avant le registre
+```
+
+### Les backends python que la distribution n'a pas
+
+L'étage 1 compile avec l'interpréteur de l'hôte. Une recette qui réclame un
+backend absent s'arrête avant de compiler quoi que ce soit, sur une ligne qui
+ne dit pas d'où vient le manque :
+
+```
+ERROR Missing dependencies: calver
+```
+
+Deux sources y répondent, et l'ordre compte. **D'abord apt**, qui entretient
+ce qu'il livre : la liste est dans `install_host_packages`. **Ensuite le
+portage lui-même**, pour ce qu'apt n'a pas — un paquet bâti range son module
+en disposition Debian dans son archive, et `HOST_PYTHON_MODULES` le fait
+extraire vers `/usr/local/lib/pythonX.Y/dist-packages` dès qu'il est bâti.
+Ajouter un nom à cette liste suffit ; l'ordre de `STAGE1_PACKAGES` place déjà
+le fournisseur avant ses consommateurs.
+
+Un greffon est un paquet à part : réclamer `hatchling` n'apporte ni
+`hatch-vcs` ni `hatch-fancy-pypi-readme`.
 
 ## 3. Étage 2
 
