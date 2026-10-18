@@ -198,6 +198,13 @@ install_host_deps() {
     #                     dependencies. Installing hatchling is not enough --
     #                     it reports "Missing dependencies: tomlkit>=0.11.1"
     #                     when asked to build a wheel
+    #   python3-hatch-vcs and python3-hatch-fancy-pypi-readme: hatchling
+    #                     PLUGINS, named in a recipe's build-system.requires
+    #                     and reported the same way. Each plugin a recipe
+    #                     asks for is a separate package
+    #   python3-maturin   the backend of every wheel wrapping a Rust
+    #                     extension; without it pyproject.toml's
+    #                     "requires = ["maturin"]" cannot be honoured
     #   elfutils          eu-strip, which debugedit's configure requires:
     #                     "eu-strip needed by find-debuginfo"
     #   libedit-dev       openssh's configure stops on "libedit not found"
@@ -240,6 +247,7 @@ install_host_deps() {
         patchelf gtk-doc-tools systemd-dev libnpth0-dev libunistring-dev \
         flit python3-hatchling python3-poetry-core \
         python3-tomlkit python3-editables \
+        python3-hatch-vcs python3-hatch-fancy-pypi-readme python3-maturin \
         elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
@@ -359,6 +367,48 @@ install_host_shims() {
         echo "  looked for /usr/include/$_t/asm" >&2
         return 1
     }
+}
+
+# Python build backends that no apt package provides, installed onto the HOST
+# from the packages stage 1 itself produced.
+#
+# Stage 1 compiles with the host interpreter, so a pure-Python package lands
+# its module under usr/lib/python3/dist-packages inside the built archive --
+# the Debian layout, which stage 2 rebuilds into the Arch one. A later stage-1
+# recipe that needs that module as a BUILD dependency finds nothing: the
+# distribution ships no package for it, and building an Arch package does not
+# make its contents importable by the host. The recipe then fails on a bare
+# "Missing dependencies: <module>" naming something the port has already built.
+#
+# Extraction targets /usr/local/lib/pythonX.Y/dist-packages, which the host
+# interpreter already searches and which the package manager never writes to,
+# so nothing here can be overwritten or reverted by a system upgrade.
+#
+# A name belongs on this list only when the distribution offers no package for
+# it; an apt package is preferred, being maintained and upgraded by the host.
+# Build order already satisfies the dependency: the provider is listed before
+# its consumers in STAGE1_PACKAGES.
+HOST_PYTHON_MODULES="python-calver"
+
+# Takes a package name, installs its python module on the host when the name is
+# listed above, and returns 0 otherwise. Reads the newest matching archive in
+# $REPO; a package carrying no dist-packages tree is a no-op.
+install_host_python_module() {
+    local name="$1" f d tmp
+    case " $HOST_PYTHON_MODULES " in
+        *" $name "*) ;;
+        *) return 0 ;;
+    esac
+    f=$(ls -1t "$REPO/$name"-*.pkg.tar.* 2>/dev/null | head -1)
+    [ -n "$f" ] || return 0
+    d="/usr/local/lib/python$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')/dist-packages"
+    tmp=$(mktemp -d)
+    if bsdtar -xf "$f" -C "$tmp" usr/lib/python3/dist-packages 2>/dev/null; then
+        sudo mkdir -p "$d"
+        sudo cp -r "$tmp/usr/lib/python3/dist-packages/." "$d/"
+        log "host python module installed from $name"
+    fi
+    rm -rf "$tmp"
 }
 
 say_shim() { printf "  %s\n" "$*"; }

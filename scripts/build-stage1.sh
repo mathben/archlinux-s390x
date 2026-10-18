@@ -109,6 +109,7 @@ main() {
         # the state of the forty that follow. They are collected and reported.
         if build_watched "$p" "$WORK/log-$p.txt"; then
             mark "$p"; ok=$((ok + 1))
+            install_host_python_module "$p"
             echo "OK    $p"
         else
             rc=$?
