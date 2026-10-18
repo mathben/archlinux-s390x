@@ -729,7 +729,7 @@ in_chroot() {
 # Safe to run every time: make_rootfs rebuilds the chroot on each invocation,
 # so this always meets a fresh /etc and cannot accumulate duplicate entries.
 run_scriptlets() {
-    local sl base name ver ran=0 failed=0
+    local sl base name ver ran=0 failed=0 failed_names=""
     for sl in "$ROOT"/var/lib/pacman/local/*/install; do
         [ -f "$sl" ] || continue
         base=${sl%/install}; base=${base##*/}
@@ -743,10 +743,16 @@ run_scriptlets() {
                     post_install '$ver'" >/dev/null 2>&1; then
             ran=$((ran + 1))
         else
+            # A COUNT IS NOT A DIAGNOSIS. This said "3 scriptlet(s) run, 1
+            # failed" and threw the output away, so the one that failed had
+            # no name and no message -- and its effect (a missing system
+            # user, an empty CA bundle) surfaced much later, elsewhere.
             failed=$((failed + 1))
+            failed_names="$failed_names $name"
         fi
     done
     printf '  %s scriptlet(s) run, %s failed\n' "$ran" "$failed"
+    [ "$failed" -eq 0 ] || printf '  failed:%s\n' "$failed_names" >&2
 }
 
 generate_ca_bundle() {
@@ -1099,9 +1105,20 @@ stage2_build() {
         GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "$url" "$dir" || {
             rm -rf "$dir"; echo "  clone failed: $url" >&2; return 1; }
         if [ -n "$sha" ]; then
-            git -C "$dir" fetch -q --depth 1 origin "$sha" 2>/dev/null &&
-                git -C "$dir" checkout -q --detach FETCH_HEAD 2>/dev/null &&
+            # SAY SO WHEN THE PIN DOES NOT HOLD.
+            #
+            # These two commands were chained with && to an echo: when the
+            # fetch or the checkout failed, nothing printed and the package
+            # was built from whatever HEAD the shallow clone landed on, while
+            # upstream.lock named a commit. The lock was ignored without a
+            # word, which is the one outcome it exists to prevent.
+            if git -C "$dir" fetch -q --depth 1 origin "$sha" 2>/dev/null &&
+               git -C "$dir" checkout -q --detach FETCH_HEAD 2>/dev/null; then
                 echo "  pinned to ${sha:0:9} (upstream.lock)"
+            else
+                echo "  PIN FAILED for $name: upstream.lock says ${sha:0:9}," \
+                     "building against HEAD instead" >&2
+            fi
         else
             echo "  NOTE: $name is not in upstream.lock; built against HEAD" >&2
         fi
@@ -1453,7 +1470,22 @@ resign_repo() {
         return 0
     fi
     log "Re-signing: repo-add rewrote the database"
-    REPO2="$REPO2" bash "$here/sign-repo.sh" 2>&1 | sed -n 's/^  /    /p' | tail -4
+    # THE FILTER DROPPED EXACTLY WHAT MATTERED.
+    #
+    # The output went through `sed -n 's/^  /    /p'`, which keeps only lines
+    # already indented by two spaces -- sign-repo.sh's own progress. Its die
+    # messages start at column one, so a failure printed nothing, and the
+    # pipeline's status was tail's, which is always 0. A repository whose
+    # database was rewritten and NOT re-signed looked exactly like one that
+    # was, until a guest refused the whole repo for an invalid signature.
+    local _out _rc
+    _out="$(REPO2="$REPO2" bash "$here/sign-repo.sh" 2>&1)"; _rc=$?
+    printf '%s\n' "$_out" | sed -n 's/^  /    /p' | tail -4
+    if [ "$_rc" -ne 0 ]; then
+        echo "  RE-SIGNING FAILED (exit $_rc); the database signature is stale:" >&2
+        printf '%s\n' "$_out" | tail -6 | sed 's/^/    /' >&2
+        return 1
+    fi
 }
 
 main() {
