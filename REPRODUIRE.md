@@ -128,6 +128,31 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+### Ce que `test-chroot.sh` donne sur un dépôt d'étage 1 SEUL
+
+Il ne rend pas un verdict propre, et ce n'est pas un défaut : il mesure un
+dépôt que l'étage 2 n'a pas encore refait. Sans ce relevé de référence, un
+lecteur ne peut pas distinguer une régression de l'état normal.
+
+- **RUN passe, et c'est le résultat qui compte.** Les dix paquets d'un rootfs
+  minimal s'installent, le chroot démarre, et `bash`, la libc, `ls`, `tar`,
+  `find` et `sed` répondent. L'étage 1 produit donc un système s390x qui
+  s'exécute. Seul `pacman` n'y démarre pas, sur `libgpgme.so.11` — un soname
+  de l'hôte, donc de la même famille que ci-dessous.
+- **SONAME** signale deux groupes. Douze sonames à la version de l'HÔTE dont
+  le dépôt livre une autre version : artefact de construction, l'étage 1
+  compilant hors du chroot. Cinq sans aucun fournisseur — `libfido2`,
+  `libselinux`, `libtcl8.6`, `libtk8.6`, `libpython3.13` — que des paquets
+  ont captés sur l'hôte et que le portage n'empaquette pas.
+- **ARTEFACT** signale les paquets Python, qui portent des chemins
+  `dist-packages`. L'étage 1 compile avec l'interpréteur de l'hôte ; c'est la
+  disposition Debian, et l'étage 2 la refait en disposition Arch.
+- **RESOLVE** échoue sur les paquets que l'étage 1 ne sait pas bâtir.
+
+**La règle** : à l'étage 1, ces quatre sections échouent ainsi. Après
+l'étage 2, la MÊME commande doit être propre. C'est la comparaison qui prouve
+quelque chose, pas le relevé isolé.
+
 ### L'épreuve RESOLVE voit ce que le registre ne voit pas
 
 Comparer `stage1.state` à `STAGE1_PACKAGES` dit ce qui n'a pas BÂTI. Cela ne
