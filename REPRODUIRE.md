@@ -142,8 +142,13 @@ lecteur ne peut pas distinguer une régression de l'état normal.
 - **SONAME** signale deux groupes. Douze sonames à la version de l'HÔTE dont
   le dépôt livre une autre version : artefact de construction, l'étage 1
   compilant hors du chroot. Cinq sans aucun fournisseur — `libfido2`,
-  `libselinux`, `libtcl8.6`, `libtk8.6`, `libpython3.13` — que des paquets
-  ont captés sur l'hôte et que le portage n'empaquette pas.
+  `libselinux`, `libtcl8.6`, `libtk8.6`, `libpython3.13` — captés sur
+  l'hôte. Le cas de tcl en montre la mécanique : le portage livre tcl 9,
+  donc `libtcl9.0.so`, et le module `_tkinter` de python s'est lié au
+  `libtcl8.6` de l'hôte, tk n'étant pas empaqueté du tout. Dans le chroot
+  ces bibliothèques n'existent pas : le module se liera autrement ou ne se
+  bâtira pas, ce qui change le contenu du paquet d'un étage à l'autre.
+  C'est `compare-stages.sh` qui le dira.
 - **ARTEFACT** signale les paquets Python, qui portent des chemins
   `dist-packages`. L'étage 1 compile avec l'interpréteur de l'hôte ; c'est la
   disposition Debian, et l'étage 2 la refait en disposition Arch.
