@@ -440,9 +440,18 @@ configure_makepkg() {
 #
 # --ignorearch: upstream PKGBUILDs carry arch=(x86_64) and nothing else.
 # CHECKSUMS ARE VERIFIED. --skipchecksums used to be passed here, justified
-#   by GitLab regenerating .patch URLs so their sums drift. Measured instead
-#   of assumed: `makepkg --verifysource` over the 148 recipes cloned on this
-#   host passes 148 and fails 0. No recipe drifts, so nothing is skipped.
+#   by regenerated .patch URLs whose sums drift. Measured instead of assumed:
+#   `makepkg --verifysource` over the 148 recipes cloned at the time passed
+#   148 and failed 0 -- but that sample was not the whole list. ONE recipe
+#   does drift, and it named itself on the next pass:
+#
+#     autoconf-archive-2024.10.16.tar.xz ... Passed
+#     0001_fix_AX_CXX_COMPILE_STDCXX.patch ... FAILED
+#
+#   Its third source is not a file but a URL cgit computes per request. Its
+#   hook now carries SKIP on that entry alone, and the release tarball in
+#   the same recipe stays verified -- which is the whole point of not
+#   disabling the check for all 228.
 #
 #   A recipe that does drift later will stop its own build with "One or more
 #   files did not pass the validity check" -- loudly, naming itself. Give

@@ -115,6 +115,27 @@ old = "source_x86_64=(bootstrap.x86_64.toml)"
 assert s.count(old) == 1, "rust: no source_x86_64 line"
 s = s.replace(old, old + "\nsource_s390x=(bootstrap.s390x.toml)", 1)
 
+# 1 bis. UNE SOURCE SANS SOMME ARRÊTE makepkg, MÊME LOCALE.
+#
+# L'amont donne un b2sums_<arch> pour chaque source_<arch>. En ajoutant
+# source_s390x sans son pendant, les deux tableaux cessent d'avoir la même
+# taille et makepkg refuse avant de bâtir :
+#
+#   ERROR: Integrity checks (b2) differ in size from the source array.
+#
+# Invisible tant que --skipchecksums était passé ; immédiat depuis que les
+# sommes sont vérifiées. La somme est CALCULÉE et non SKIP : ce crochet est
+# l'auteur du fichier, donc il peut en répondre, et le contrôle attrapera
+# une sortie corrompue de sa propre main.
+import hashlib
+_b2 = hashlib.blake2b(io.open("bootstrap.s390x.toml", "rb").read()).hexdigest()
+old = "b2sums_x86_64=("
+hit = [k for k, l in enumerate(s.split("\n")) if l.startswith(old)]
+assert len(hit) == 1, "rust: une seule ligne b2sums_x86_64 attendue"
+lines = s.split("\n")
+lines.insert(hit[0] + 1, "b2sums_s390x=('%s')" % _b2)
+s = "\n".join(lines)
+
 # 2. the system-stage0 workaround, which a downloaded stage0 does not want.
 lines = s.split("\n")
 hit = [i for i, l in enumerate(lines)

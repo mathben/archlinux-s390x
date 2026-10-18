@@ -36,6 +36,29 @@ new = "https://ftp.gnu.org/gnu/${pkgname}/"
 assert s.count(old) >= 1, "autoconf-archive: URL ftpmirror introuvable"
 s = s.replace(old, new)
 
+# LE PATCH EST FABRIQUÉ À LA DEMANDE, DONC SA SOMME NE TIENT PAS.
+#
+# La troisième source n est pas un fichier : c est une URL que cgit calcule
+# à chaque requête,
+#
+#   .../autoconf-archive.git/patch/?id=241f7ae5...
+#
+# et ses octets varient -- en-têtes, version de git, horodatage. Le tarball
+# de version, lui, est un vrai fichier et reste vérifié : il a passé le
+# contrôle dans la même passe où le patch a échoué.
+#
+#   autoconf-archive-2024.10.16.tar.xz ... Passed
+#   0001_fix_AX_CXX_COMPILE_STDCXX.patch ... FAILED
+#
+# SKIP sur CETTE entrée seulement. C est la raison pour laquelle le portage
+# ne coupe plus --skipchecksums globalement : une source instable se traite
+# là où elle est, pas en aveuglant les 228 autres.
+old = """'4bcc7a56332cd4f4f25fc9b1a67e8a3500e3bb6ea4d88ce1cc0fce31d4e7ea7f'"""
+assert s.count(old) == 1, "autoconf-archive: la somme du patch est introuvable"
+# Pas de commentaire en ligne : la liste se ferme par une parenthèse sur la
+# même ligne, et le dièse l'avalerait.
+s = s.replace(old, "'SKIP'", 1)
+
 io.open("PKGBUILD", "w", encoding="utf-8").write(s)
 ZZPY
 grep -q "ftpmirror.gnu.org" PKGBUILD && {
