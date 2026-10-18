@@ -412,6 +412,8 @@ install_host_shims() {
 #   python-setuptools-rust    same, and maturin builds against it
 #   python-maturin            the distribution's is below the floor recipes
 #                             wrapping a Rust extension declare
+#   python-poetry-core        the distribution's is below the floor some
+#                             recipes declare
 #   python-setuptools         the distribution's is below the floor some
 #                             recipes declare. What the package installs is
 #                             the vendored builder's copy, older than the
@@ -422,7 +424,7 @@ install_host_shims() {
 HOST_PYTHON_MODULES="python-calver python-trove-classifiers
                     python-packaging python-vcs-versioning
                     python-setuptools-scm python-setuptools-rust
-                    python-maturin python-setuptools"
+                    python-maturin python-setuptools python-poetry-core"
 
 # Takes a package name, installs its python module on the host when the name is
 # listed above, and returns 0 otherwise. Reads the newest matching archive in
