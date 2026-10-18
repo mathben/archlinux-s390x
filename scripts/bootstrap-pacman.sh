@@ -205,6 +205,9 @@ install_host_deps() {
     #   python3-maturin   the backend of every wheel wrapping a Rust
     #                     extension; without it pyproject.toml's
     #                     "requires = ["maturin"]" cannot be honoured
+    #   python3-fastjsonschema  poetry.core validates pyproject.toml against a
+    #                     JSON schema with it: "No module named
+    #                     'fastjsonschema'" from inside the backend
     #   elfutils          eu-strip, which debugedit's configure requires:
     #                     "eu-strip needed by find-debuginfo"
     #   libedit-dev       openssh's configure stops on "libedit not found"
@@ -248,6 +251,7 @@ install_host_deps() {
         flit python3-hatchling python3-poetry-core \
         python3-tomlkit python3-editables \
         python3-hatch-vcs python3-hatch-fancy-pypi-readme python3-maturin \
+        python3-fastjsonschema \
         elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
@@ -384,11 +388,22 @@ install_host_shims() {
 # interpreter already searches and which the package manager never writes to,
 # so nothing here can be overwritten or reverted by a system upgrade.
 #
-# A name belongs on this list only when the distribution offers no package for
-# it; an apt package is preferred, being maintained and upgraded by the host.
+# A name belongs on this list when the distribution offers no package for it,
+# or ships one too old to satisfy a recipe. Otherwise apt is preferred, being
+# maintained and upgraded by the host. /usr/local/lib/pythonX.Y/dist-packages
+# precedes /usr/lib/python3/dist-packages in sys.path, so an extracted module
+# shadows the distribution's copy of the same name -- which is how an outdated
+# one is superseded without removing it.
+#
+#   python-calver             no package in the distribution
+#   python-trove-classifiers  the distribution's copy is frozen at an older
+#                             release and rejects classifiers a current recipe
+#                             declares: "Unknown classifier in field
+#                             `project.classifiers`"
+#
 # Build order already satisfies the dependency: the provider is listed before
 # its consumers in STAGE1_PACKAGES.
-HOST_PYTHON_MODULES="python-calver"
+HOST_PYTHON_MODULES="python-calver python-trove-classifiers"
 
 # Takes a package name, installs its python module on the host when the name is
 # listed above, and returns 0 otherwise. Reads the newest matching archive in
