@@ -412,13 +412,17 @@ install_host_shims() {
 #   python-setuptools-rust    same, and maturin builds against it
 #   python-maturin            the distribution's is below the floor recipes
 #                             wrapping a Rust extension declare
+#   python-setuptools         the distribution's is below the floor some
+#                             recipes declare. What the package installs is
+#                             the vendored builder's copy, older than the
+#                             label -- see patches/pkgbuild/python-setuptools.sh
 #
 # Build order already satisfies the dependency: the provider is listed before
 # its consumers in STAGE1_PACKAGES.
 HOST_PYTHON_MODULES="python-calver python-trove-classifiers
                     python-packaging python-vcs-versioning
                     python-setuptools-scm python-setuptools-rust
-                    python-maturin"
+                    python-maturin python-setuptools"
 
 # Takes a package name, installs its python module on the host when the name is
 # listed above, and returns 0 otherwise. Reads the newest matching archive in

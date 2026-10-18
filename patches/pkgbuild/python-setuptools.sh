@@ -103,3 +103,20 @@ grep -q 'site_packages/\$_name' PKGBUILD && {
 grep -q 'path "\*/\$_name/\*.exe" -delete' PKGBUILD || {
     echo "python-setuptools: la recherche n a pas ete posee" >&2; exit 1; }
 echo "python-setuptools: .exe retires par find, pas par un chemin devine"
+
+# CE QUE LE PAQUET PRODUIT NE PORTE PAS LA VERSION QU'IL ANNONCE.
+#
+# Le batisseur embarque emporte sa PROPRE copie de setuptools, plus ancienne
+# que le pkgver de la recette, et c'est elle qui est installee. Le paquet
+# s'annonce donc a la version d'amont tout en livrant celle du batisseur --
+# le meme ecart que lib-python-bootstrap.sh decrit pour packaging, a ceci
+# pres qu'ici la sonde ne peut pas l'eviter : ce paquet DOIT prendre la
+# branche du batisseur, pour la raison donnee plus haut.
+#
+# Sans consequence tant qu'aucune recette ne declare un plancher superieur a
+# ce que le batisseur emporte -- le plus haut rencontre est setuptools>=80.
+# Une recette qui exigerait davantage serait satisfaite sur le papier et pas
+# en fait, et l'echec surgirait ailleurs, chez un consommateur. Le controle
+# tient en une ligne, sur le paquet bati :
+#
+#   bsdtar -xOf <paquet> | ... setuptools-*.dist-info/METADATA
