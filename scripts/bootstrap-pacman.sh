@@ -211,8 +211,6 @@ install_host_deps() {
     #   elfutils          eu-strip, which debugedit's configure requires:
     #                     "eu-strip needed by find-debuginfo"
     #   libedit-dev       openssh's configure stops on "libedit not found"
-    #   liburing-dev      postgresql's meson run stops on "Package 'liburing',
-    #                     required by 'virtual:world', not found"
     #   libksba-dev       gnupg's configure: "You need libksba to build this
     #                     program", printed twelve lines above the error it
     #                     ends on, which names nothing
@@ -253,7 +251,7 @@ install_host_deps() {
         flit python3-hatchling python3-poetry-core \
         python3-tomlkit python3-editables \
         python3-hatch-vcs python3-hatch-fancy-pypi-readme python3-maturin \
-        python3-fastjsonschema liburing-dev \
+        python3-fastjsonschema \
         elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \

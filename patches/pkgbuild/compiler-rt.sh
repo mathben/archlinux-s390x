@@ -58,11 +58,21 @@ fix = """
   # Le delimiteur est %, pas | : le motif contient les || du C, et un | y
   # terminerait l expression -- « sed: unknown option to 's' ». Seul le
   # premier test disparait ; le && et la suite de la ligne restent.
-  sed -i 's%defined(__STDC_IEC_60559_COMPLEX__) || %%' \\
-    ../libc/include/llvm-libc-macros/cfloat128-macros.h
-  grep -q '__STDC_IEC_60559_COMPLEX__' \\
-    ../libc/include/llvm-libc-macros/cfloat128-macros.h \\
-    && { echo 'compiler-rt: la condition trop large survit' >&2; exit 1; }
+  # UPSTREAM MAY HAVE DONE IT ALREADY, and the test belongs here rather than
+  # in the hook: a hook runs beside the PKGBUILD, before the sources are
+  # unpacked, with no header to read. A release spelling the gate with && and
+  # no || already requires the macro this patch exists to require, so there is
+  # nothing to change and the build goes on. Failing there would block the
+  # package over a fix landing upstream. A third spelling stops the build
+  # rather than guessing which half to keep.
+  _h=../libc/include/llvm-libc-macros/cfloat128-macros.h
+  if grep -q 'defined(__STDC_IEC_60559_COMPLEX__) || ' "$_h"; then
+    sed -i 's%defined(__STDC_IEC_60559_COMPLEX__) || %%' "$_h"
+    grep -q '__STDC_IEC_60559_COMPLEX__' "$_h" \\
+      && { echo 'compiler-rt: la condition trop large survit' >&2; exit 1; }
+  elif ! grep -q 'defined(__STDC_IEC_60559_COMPLEX__) && defined(__SIZEOF_FLOAT128__)' "$_h"; then
+    echo 'compiler-rt: gabarit cfloat128 inconnu, ni || ni &&' >&2; exit 1
+  fi
   mkdir build
 """
 s = s.replace(anchor, fix, 1)
