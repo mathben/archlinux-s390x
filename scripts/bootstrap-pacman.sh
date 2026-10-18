@@ -429,8 +429,28 @@ configure_makepkg() {
 #
 # --ignorearch: upstream PKGBUILDs carry arch=(x86_64) and nothing else.
 # --skipchecksums: GitLab regenerates .patch URLs, so their checksums drift
-#   from what the PKGBUILD recorded. Release tarballs still validate; only
-#   the generated patches are skipped.
+#   from what the PKGBUILD recorded.
+#
+#   WHAT THIS ACTUALLY TURNS OFF, read from makepkg rather than assumed:
+#
+#     check_source_integrity() {
+#       if (( SKIPCHECKSUMS && SKIPPGPCHECK )); then
+#         warning "Skipping all source file integrity checks."
+#
+#   Both flags are passed here, so that first branch is the one taken: NO
+#   source is verified -- not the patches, not the release tarballs, not the
+#   signatures. An earlier version of this comment claimed the tarballs still
+#   validated. They do not, and a reader who trusted that sentence would have
+#   believed the port verified what it downloads.
+#
+#   The cost is paid far from here. makepkg reuses a cached source on its NAME
+#   alone, so a truncated or substituted file in SRCDEST is used as-is, and a
+#   hook that justifies changing a source URL by "same sha256" rests on a sum
+#   this build never computes.
+#
+#   To close: keep checksums ON and let the few recipes with drifting patch
+#   URLs carry SKIP on those entries alone. Measure first -- how many of the
+#   235 actually drift is unknown, and probably small.
 # --nocheck: stage-1 test suites run against the HOST libraries, not Arch's,
 #   so their verdict says nothing about the port. acl failed its check() on a
 #   perfectly sound build, and the suites cost hours. Stage 2 runs them.
