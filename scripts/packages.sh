@@ -592,4 +592,8 @@ STAGE1_EXPECTED_FAILURES=(
     libxslt     # needs libxml2 >= 2.15.1; the host has an older one
     libaio      # upstream withdrew the release tarball
     postgresql  # configures --with-llvm against the host's older LLVM
+    maturin     # Cargo.toml sets rust-version 1.89 and the distribution's
+                # rustc is older; "rustc <version> is not supported by the
+                # following packages". Stage 2 builds rust before it.
+    python-rpds-py  # a maturin backend, so it waits on the same toolchain
 )
