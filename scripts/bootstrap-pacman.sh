@@ -428,10 +428,16 @@ configure_makepkg() {
 # build_package <name> -- fetch the official PKGBUILD and build it for s390x.
 #
 # --ignorearch: upstream PKGBUILDs carry arch=(x86_64) and nothing else.
-# --skipchecksums: GitLab regenerates .patch URLs, so their checksums drift
-#   from what the PKGBUILD recorded.
+# CHECKSUMS ARE VERIFIED. --skipchecksums used to be passed here, justified
+#   by GitLab regenerating .patch URLs so their sums drift. Measured instead
+#   of assumed: `makepkg --verifysource` over the 148 recipes cloned on this
+#   host passes 148 and fails 0. No recipe drifts, so nothing is skipped.
 #
-#   WHAT THIS ACTUALLY TURNS OFF, read from makepkg rather than assumed:
+#   A recipe that does drift later will stop its own build with "One or more
+#   files did not pass the validity check" -- loudly, naming itself. Give
+#   that one entry SKIP in its own hook; do not turn the check off for all.
+#
+#   WHAT PASSING IT TURNED OFF, read from makepkg rather than assumed:
 #
 #     check_source_integrity() {
 #       if (( SKIPCHECKSUMS && SKIPPGPCHECK )); then
@@ -625,7 +631,7 @@ build_package() {
     # target need it -- meson does, and its hook does it.
     LC_ALL=C.UTF-8 \
     DEB_PYTHON_INSTALL_LAYOUT=deb_system \
-    makepkg --nodeps --ignorearch --skippgpcheck --skipchecksums --nocheck \
+    makepkg --nodeps --ignorearch --skippgpcheck --nocheck \
         -C -f || return 1
     # An exit code is not proof. Only the artefact is.
     local produced=()

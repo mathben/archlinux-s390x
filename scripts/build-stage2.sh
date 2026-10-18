@@ -1143,12 +1143,11 @@ stage2_build() {
     # NO --nocheck. Stage 1 skipped the test suites because they ran against
     # the host's libraries and their verdict said nothing about the port. Here
     # they test what was actually built, which is the whole point of stage 2.
-    # --skippgpcheck WITH --skipchecksums means makepkg verifies NO source at
-    # all, not merely the signatures: its check_source_integrity takes the
-    # "Skipping all source file integrity checks" branch when both are set.
-    # Stage 2 inherits that from stage 1 and the reasoning is in
-    # scripts/bootstrap-pacman.sh, beside the flag.
-    local mkflags="--nodeps --ignorearch --skippgpcheck --skipchecksums"
+    # --skippgpcheck alone, NOT with --skipchecksums: with both set, makepkg
+    # takes its "Skipping all source file integrity checks" branch and no
+    # source is verified at all. With only this one, check_checksums still
+    # runs. The keys are what is missing here, not the sums.
+    local mkflags="--nodeps --ignorearch --skippgpcheck"
     # EL_NOCHECK=1 for the FIRST pass over the list, and only that.
     #
     # Stage 1 skipped every test suite because it ran against the host's
