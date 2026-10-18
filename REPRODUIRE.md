@@ -166,6 +166,31 @@ présents. Clone, `--depth 1` et résolution du commit fonctionnent en local.
 réessais rapides aggravent ce qu'ils tentent de réparer. Deux en parallèle,
 et une attente qui se compte en minutes sur un 429.
 
+### Les recettes ne suffisent pas : miroiter aussi les SOURCES du même hôte
+
+Un miroir de recettes laisse passer ce dont une recette a besoin pour se
+bâtir. Deux dépôts du même hôte ne sont pas des recettes et manquent donc au
+miroir :
+
+```bash
+git clone --mirror https://gitlab.archlinux.org/archlinux/python-bootstrap.git
+git clone --mirror https://gitlab.archlinux.org/pacman/pacman.git
+```
+
+**Le premier arrête tout.** `python-bootstrap` est le bâtisseur embarqué par
+lequel Arch brise le cycle de l'empaquetage Python, et `python-setuptools`
+n'a pas d'autre chemin : son arbre source masque le setuptools installé, donc
+il ne peut pas se servir de backend à lui-même. Sans lui :
+
+- l'étage 1 perd `python-setuptools`, et `python-lark-parser` derrière lui,
+  qui exige une version que la distribution ne livre pas ;
+- l'étage 2 **ne démarre pas du tout** : `python-setuptools` est nommé dans
+  `CHROOT_PKGS`, et le chroot se peuple depuis repo1.
+
+Il n'existe nulle part ailleurs — pas de miroir GitHub, vérifié : 404. Un
+miroir des recettes sans ces deux dépôts laisse le portage à la merci de
+l'hôte qu'il croyait avoir quitté.
+
 ## 4 bis. Un échec sur deux n'est pas un bogue
 
 ### Sept échecs sont normaux, et la liste les nomme
