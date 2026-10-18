@@ -35,24 +35,55 @@ say() { printf '  %s\n' "$*"; }
 [ -d "$A" ] || die "no repository at $A"
 [ -d "$B" ] || die "no repository at $B"
 
+# LES DEUX ETAGES NE COMPRESSENT PAS PAREIL, et une comparaison qui ne
+# cherche qu'une extension n'en lit qu'un. L'etage 1 suit le makepkg.conf de
+# l'hote, qui peut imposer PKGEXT='.pkg.tar.gz' ; le chroot de l'etage 2 garde
+# le .pkg.tar.zst d'Arch. En ne voyant que .zst, ce script comparait ZERO
+# paquet et annoncait quand meme que les etages different -- un verdict
+# assure, rendu sans avoir rien lu. L'extension n'est pas un critere ici :
+# c'est la façon de compresser, pas ce que le paquet contient.
+_PKGGLOB='*.pkg.tar.*'
+
 _names() {  # <repo> -> "name version" par ligne
     local f
-    for f in "$1"/*.pkg.tar.zst; do
+    for f in "$1"/$_PKGGLOB; do
         [ -e "$f" ] || continue
         f="${f##*/}"
-        # nom-version-release-arch.pkg.tar.zst ; le nom peut porter des tirets.
-        local rest="${f%-*.pkg.tar.zst}"          # ... nom-version-release
+        case "$f" in *.sig) continue ;; esac
+        # nom-version-release-arch.pkg.tar.<ext> ; le nom peut porter des tirets.
+        local rest="${f%.pkg.tar.*}"              # ... nom-version-release-arch
+        rest="${rest%-*}"                         # ... nom-version-release
         local rel="${rest##*-}" ; rest="${rest%-*}"
         local ver="${rest##*-}" ; local name="${rest%-*}"
         printf '%s %s-%s\n' "$name" "$ver" "$rel"
     done | sort
 }
 
+# <repo> <nom> -> le fichier du paquet, quelle que soit sa compression.
+_pkgfile() {
+    local f
+    for f in "$1/$2"-[0-9]*.pkg.tar.*; do
+        [ -e "$f" ] || continue
+        case "$f" in *.sig) continue ;; esac
+        printf '%s\n' "$f"
+        return 0
+    done
+    return 1
+}
+
+# bsdtar plutot que `tar --use-compress-program=unzstd` : il reconnait la
+# compression a la lecture, donc un .gz et un .zst se lisent du meme appel.
+# Le `sort` final ecrit dans un tube que son lecteur peut fermer tot -- `diff
+# -q` s'arrete a la premiere difference, `head` a sa vingtieme ligne -- et se
+# plaint alors sur stderr. Une ligne « write failed: Broken pipe » par paquet
+# compare noie un rapport dont c'est justement la lisibilite qui fait l'interet.
 _manifest() {  # <fichier paquet> -> fichiers + declarations, trie
-    tar --use-compress-program=unzstd -tf "$1" 2>/dev/null \
-        | grep -vE '^\.(PKGINFO|BUILDINFO|MTREE)$' | sort
-    tar --use-compress-program=unzstd -xOf "$1" .PKGINFO 2>/dev/null \
-        | grep -E '^(depend|provides|conflict|replaces) ' | sort
+    {
+        bsdtar -tf "$1" 2>/dev/null \
+            | grep -vE '^\.(PKGINFO|BUILDINFO|MTREE)$' | sort
+        bsdtar -xOf "$1" .PKGINFO 2>/dev/null \
+            | grep -E '^(depend|provides|conflict|replaces) ' | sort
+    } 2>/dev/null
 }
 
 : > "$OUT"
@@ -77,8 +108,8 @@ same=0; differ=0
 # donc en silence et a l endroit ou le lecteur attend la reponse. Un `|| true`
 # par capture : l absence d un fichier est une donnee, pas une erreur.
 while read -r name _; do
-    fa=$(ls "$A/$name"-[0-9]*.pkg.tar.zst 2>/dev/null | head -1 || true)
-    fb=$(ls "$B/$name"-[0-9]*.pkg.tar.zst 2>/dev/null | head -1 || true)
+    fa=$(_pkgfile "$A" "$name" || true)
+    fb=$(_pkgfile "$B" "$name" || true)
     [ -n "$fa" ] && [ -n "$fb" ] || continue
     if diff -q <(_manifest "$fa" || true) <(_manifest "$fb" || true) >/dev/null 2>&1; then
         same=$((same + 1))
@@ -90,8 +121,13 @@ while read -r name _; do
         # etait invisible tant que tout etait identique.
         {
             printf '=== %s ===\n' "$name"
-            diff <(_manifest "$fa" || true) <(_manifest "$fb" || true) \
-                | head -20 || true
+            # head ferme le tube a vingt lignes, et le `sort` qui ecrit
+            # dedans se plaint alors sur stderr -- une ligne « write failed:
+            # Broken pipe » par paquet different, qui noie le rapport sans
+            # rien signaler de vrai.
+            diff <(_manifest "$fa" 2>/dev/null || true) \
+                 <(_manifest "$fb" 2>/dev/null || true) \
+                | head -20 2>/dev/null || true
         } >> "$OUT" || true
     fi
 done < <(join "$WORK/.cmp-a" "$WORK/.cmp-b")
