@@ -168,6 +168,30 @@ et une attente qui se compte en minutes sur un 429.
 
 ## 4 bis. Un échec sur deux n'est pas un bogue
 
+### Sept échecs sont normaux, et la liste les nomme
+
+Une passe d'étage 1 n'est JAMAIS propre. Sept paquets ne peuvent pas se bâtir
+hors du chroot : il leur faut le llvm ou le libxml2 que le portage produit
+lui-même, ou bien l'amont a retiré leur source. Ce n'est pas un défaut à
+corriger, c'est un trou de fermeture que l'étage 2 comble.
+
+Ils sont nommés dans `STAGE1_EXPECTED_FAILURES`, à la fin de
+`scripts/packages.sh`, et la raison de chacun est écrite à côté du paquet dans
+la liste principale. Le résumé de fin de passe les sépare tout seul :
+
+```
+== stage 1: 221 built, 7 failed ==
+  expected (see STAGE1_EXPECTED_FAILURES): clang compiler-rt lld rust libxslt libaio postgresql
+  no unexpected failure
+```
+
+**C'est la ligne `UNEXPECTED` qui compte.** Tant qu'elle n'apparaît pas, la
+passe s'est bien passée, quel que soit le nombre d'échecs. Et si un paquet
+attendu se met à bâtir, le résumé le dit aussi — la liste est alors à alléger,
+ce qui veut dire que l'étage 1 va plus loin qu'avant.
+
+### Le reste
+
 Relancer d'abord, diagnostiquer ensuite. Sur une passe observée, la moitié
 des échecs venaient du réseau et se sont effacés d'eux-mêmes à la relance :
 un `curl` qui ne connecte pas en 114 ms, un miroir qui rend un 5xx, un clone
