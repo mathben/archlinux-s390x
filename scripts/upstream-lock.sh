@@ -2,7 +2,7 @@
 # The upstream commit of every package checkout, recorded and enforced.
 #
 # WHY THIS EXISTS. Every PKGBUILD in this port comes from a fresh
-# `git clone --depth 1` of gitlab.archlinux.org, and the 63 hooks under
+# `git clone --depth 1` of gitlab.archlinux.org, and the hooks under
 # patches/pkgbuild/ assert EXACT strings:
 #
 #   assert s.count(old) == 1, "binutils: expected one --enable-pgo-build ..."
@@ -93,6 +93,16 @@ cmd_verify() {
     fi
     printf '%s locked, %s moved, %s absent, %s unlocked\n' \
         "$n" "$moved" "$missing" "$unlocked"
+    # A BARE COUNT HIDES ITS OWN SIZE. "44 unlocked" reads like a handful of
+    # stragglers; said as a share of the list it is a fifth of stage 1 built
+    # against whatever Arch publishes that day. The number was in this line
+    # from the start and nobody acted on it.
+    if [ "$unlocked" -gt 0 ] && [ "${#STAGE1_PACKAGES[@]}" -gt 0 ]; then
+        printf '  %s of %s stage-1 entries are NOT pinned (%s%%): those build against HEAD\n' \
+            "$unlocked" "${#STAGE1_PACKAGES[@]}" \
+            "$(( unlocked * 100 / ${#STAGE1_PACKAGES[@]} ))"
+        printf '  pin them once they have been built: bash %s write\n' "${0##*/}"
+    fi
     # A checkout that is absent is not a failure: it has simply not been cloned
     # on this machine yet. One that MOVED is, because a hook was written against
     # the other commit. UNLOCKED is reported but not fatal -- a package added to

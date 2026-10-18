@@ -607,6 +607,26 @@ not to impoverish stage 3.
 filled the disk), libaio (its source is gone -- see the shape above), and
 autoconf-archive (a GNU mirror answering 502 that afternoon).
 
+### 18% of stage 1 is not pinned
+
+`upstream-lock.sh verify` has always counted them, in a line nobody read:
+
+    186 locked, 0 moved, 42 absent, 44 unlocked
+
+Forty-four of the 235 stage-1 entries have no commit in upstream.lock, so a
+fresh checkout clones whatever Arch publishes that day. Eight of them carry
+a hook that asserts exact strings against that moving target -- compiler-rt
+already fails against today's upstream, which is how the shape was found.
+
+Not pinning them is deliberate and reasoned: a package on the list that has
+never been built has no commit to record, and `write` covers it once it has.
+The gap is that nothing says how large the unpinned share has grown. It does
+now, as a percentage rather than a count.
+
+**To close:** build the 42 absent checkouts once, then `upstream-lock.sh
+write`. The two that cannot be locked that way are the recipes this
+repository writes itself, which have no upstream to pin.
+
 ### A fifth failure shape: the source itself goes away
 
 The three original shapes are about a package's dependencies, the fourth about
