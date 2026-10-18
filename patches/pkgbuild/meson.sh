@@ -16,7 +16,8 @@
 # meson cannot be dropped -- stage 2 needs it to rebuild ten packages -- so it
 # gets relocated instead.
 #
-# STAGE-1 ONLY, and listed in build-stage2.sh's STAGE2_SKIP_HOOKS. Inside the
+# STAGE-1 ONLY, by the EL_STAGE guard below. It was once named in a
+# STAGE2_SKIP_HOOKS list, which no longer exists. Inside the
 # chroot the python doing the installing is OUR python, built from Arch's
 # PKGBUILD, whose sysconfig answers /usr/lib/pythonX.Y/site-packages without
 # being asked. The condition disappears, like git's missing zlib-ng headers and

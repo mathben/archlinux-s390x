@@ -7,12 +7,16 @@
 # package on Ubuntu at all -- libz-ng-dev, zlib-ng-dev and libzlib-ng-dev all
 # have no candidate -- so the header cannot be had from the host.
 #
-# THIS HOOK IS STAGE-1 ONLY, and that is the interesting part. Our own zlib-ng
+# THIS SECTION IS STAGE-1 ONLY -- the section, not the file. Our own zlib-ng
 # package DOES ship usr/include/zlib-ng.h, so inside the stage-2 chroot the
-# header is present and ZLIB_NG=1 is correct. The hook exists purely because
-# stage 1 builds against the host. It is listed in build-stage2.sh's
-# STAGE2_SKIP_HOOKS beside libgcrypt.sh, for the same reason: the condition it
-# works around does not exist there.
+# header is present and ZLIB_NG=1 is correct. The section exists purely
+# because stage 1 builds against the host, and an EL_STAGE guard below turns
+# it off for later stages.
+#
+# It was once named in a STAGE2_SKIP_HOOKS list, which skipped the whole
+# FILE. That list is gone -- see the paragraph below, written when a section
+# both stages need was appended here and silently never ran. This header kept
+# citing it, telling a reader the hook does not run in stage 2. It does.
 #
 # The declaration goes with the flag. git declares zlib-ng in depends, and a
 # git built against plain zlib does not use it -- the seventh instance in this

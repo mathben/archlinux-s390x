@@ -28,7 +28,8 @@
 # reads one: makepkg writes .pkg.tar.gz, pacman reads it. Dropping xar removes
 # the entire ICU chain rather than papering over its version.
 #
-# STAGE 1 ONLY -- build-stage2.sh lists libarchive in STAGE2_SKIP_HOOKS. Stage
+# STAGE 1 ONLY, by the EL_STAGE guard below -- not by a list. The
+# STAGE2_SKIP_HOOKS this line used to name no longer exists. Stage
 # 2 builds it as Arch does, with xar, against our own libxml2 and icu, where
 # the versions agree. The divergence lives exactly as long as the cycle does.
 #
