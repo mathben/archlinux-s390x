@@ -37,6 +37,26 @@ usage() { printf 'usage: %s [write|verify|restore]\n' "${0##*/}" >&2; exit 2; }
 # The remote is READ from each checkout, not rebuilt from a base URL. Most come
 # from archlinux/packaging/packages, pacman does not, and guessing would put a
 # wrong URL in a file whose whole purpose is to be trusted later.
+# Where a recipe comes from, as the next person must fetch it.
+#
+# A checkout cloned through PKG_GIT_BASE reports that mirror as its origin, so
+# recording the origin verbatim pins the recipe to a path that exists on one
+# machine -- and carries an account name into a versioned file, which the
+# repository's conventions forbid outright. The commit is the same either way;
+# only the URL has to be put back. The lock's own entry is authoritative when
+# there is one, since a few packages do not live under the packaging group.
+_PACKAGING_BASE="https://gitlab.archlinux.org/archlinux/packaging/packages"
+
+_upstream_url() {
+    local name="$1" url="$2" known
+    case "$url" in
+        http://*|https://*) printf '%s\n' "$url"; return 0 ;;
+    esac
+    known=$(awk -v n="$name" '$1 == n { print $3; exit }' "$LOCK" 2>/dev/null)
+    [ -n "$known" ] && { printf '%s\n' "$known"; return 0; }
+    printf '%s/%s.git\n' "$_PACKAGING_BASE" "$name"
+}
+
 _scan() {
     local d name sha url
     for d in "$WORK"/pkg/*/; do
@@ -44,12 +64,31 @@ _scan() {
         name=$(basename "$d")
         sha=$(git -C "$d" rev-parse HEAD 2>/dev/null) || continue
         url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
-        printf '%s %s %s\n' "$name" "$sha" "$url"
+        printf '%s %s %s\n' "$name" "$sha" "$(_upstream_url "$name" "$url")"
     done | sort
 }
 
+# Entries of the current lock whose checkout is gone, printed unchanged.
+#
+# _scan reads the working copies, so regenerating from it alone drops the pin
+# of any package whose checkout was cleaned -- losing exactly the record this
+# file exists to hold, and losing it silently, since a smaller file looks like
+# a smaller port. verify already reports those as ABSENT; write keeps them.
+_kept() {
+    local here names n rest
+    [ -f "$LOCK" ] || return 0
+    here=$(mktemp)
+    _scan | awk '{print $1}' > "$here"
+    grep -v '^#' "$LOCK" | while read -r n rest; do
+        [ -n "$n" ] || continue
+        grep -qxF "$n" "$here" || printf '%s %s\n' "$n" "$rest"
+    done
+    rm -f "$here"
+}
+
 cmd_write() {
-    local tmp
+    local tmp before after
+    before=$(grep -vc '^#' "$LOCK" 2>/dev/null || echo 0)
     tmp=$(mktemp)
     {
         printf '# Upstream commit of every package checkout in this port.\n'
@@ -57,10 +96,27 @@ cmd_write() {
         printf '# Verify with:     bash scripts/upstream-lock.sh verify\n'
         printf '#\n'
         printf '# <package> <commit> <url>\n'
-        _scan
+        { _scan; _kept; } | sort
     } > "$tmp"
+    after=$(grep -vc '^#' "$tmp")
+    # A rewrite that removes pins is a mistake, never an update: a package
+    # leaving the port is removed from the list, and its entry goes with the
+    # commit that does that, not silently here.
+    if [ "$after" -lt "$before" ]; then
+        rm -f "$tmp"
+        printf 'refusing to write: %s entries would replace %s\n' "$after" "$before" >&2
+        return 1
+    fi
+    # A path is not a source anyone else can fetch, and a home directory names
+    # an account. Neither belongs in a file the repository carries.
+    if grep -qvE '^(#|[^ ]+ [0-9a-f]{40} https?://)' "$tmp"; then
+        rm -f "$tmp"
+        printf 'refusing to write: an entry is not <name> <sha> <http url>\n' >&2
+        grep -vE '^(#|[^ ]+ [0-9a-f]{40} https?://)' "$LOCK" >&2 2>/dev/null
+        return 1
+    fi
     mv "$tmp" "$LOCK"
-    printf 'wrote %s entries to %s\n' "$(grep -vc '^#' "$LOCK")" "$LOCK"
+    printf 'wrote %s entries to %s (was %s)\n' "$after" "$LOCK" "$before"
 }
 
 cmd_verify() {

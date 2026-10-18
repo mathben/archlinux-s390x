@@ -1,15 +1,17 @@
+# Upstream commit of every package checkout in this port.
+# Regenerate with: bash scripts/upstream-lock.sh write
+# Verify with:     bash scripts/upstream-lock.sh verify
 #
 # <package> <commit> <url>
-# Regenerate with: bash scripts/upstream-lock.sh write
-# Upstream commit of every package checkout in this port.
-# Verify with:     bash scripts/upstream-lock.sh verify
 acl c51beb032d03a50cbd8dae96de23986d21558875 https://gitlab.archlinux.org/archlinux/packaging/packages/acl.git
 attr 13964f8a55dde2d7e407267eb8fbc5ec44bdb585 https://gitlab.archlinux.org/archlinux/packaging/packages/attr.git
 audit 8db272a0138b530ab71f98763c808a5713f859a4 https://gitlab.archlinux.org/archlinux/packaging/packages/audit.git
 autoconf c69f433ef07dc732887e22cd5d5a7501cd944fef https://gitlab.archlinux.org/archlinux/packaging/packages/autoconf.git
 autoconf-archive e5002e5c706204565fb7bb02a923226e8c53131b https://gitlab.archlinux.org/archlinux/packaging/packages/autoconf-archive.git
 automake 9697f63e766a66b5da9ccba3fc1a46a798875154 https://gitlab.archlinux.org/archlinux/packaging/packages/automake.git
+base-devel 0da9de05b2691213149d4c95abc9af80f0aa4cd7 https://gitlab.archlinux.org/archlinux/packaging/packages/base-devel.git
 bash ac765bd0cb9b4c27f75c94bc320bf3c8b57304c4 https://gitlab.archlinux.org/archlinux/packaging/packages/bash.git
+bash-completion 5e3300d344440c188a3d2a422a3c1197f0fe457d https://gitlab.archlinux.org/archlinux/packaging/packages/bash-completion.git
 bc 78b5ebfe776fd281824716017851b9dd50a7ba94 https://gitlab.archlinux.org/archlinux/packaging/packages/bc.git
 binutils 5b5ba27ac801a1e7d11819e02a80605ea33434dd https://gitlab.archlinux.org/archlinux/packaging/packages/binutils.git
 bison 891a7b237b41cb44109510b25afeb85ffef71b8a https://gitlab.archlinux.org/archlinux/packaging/packages/bison.git
@@ -17,7 +19,9 @@ brotli 6ed940ad7ae3399fd7f84045703849a1a3a58914 https://gitlab.archlinux.org/arc
 bzip2 655c806171fcb62300d8a056536360615f99be3e https://gitlab.archlinux.org/archlinux/packaging/packages/bzip2.git
 ca-certificates d343b61653fb3cfe7a2bdad8a66c0d122ff11a78 https://gitlab.archlinux.org/archlinux/packaging/packages/ca-certificates.git
 clang 83f2d0c620f23adcc099794f071a3b2dbb7e1596 https://gitlab.archlinux.org/archlinux/packaging/packages/clang.git
+cloud-init 500c45cb09d1f82b353242b204231ed41b2c4b29 https://gitlab.archlinux.org/archlinux/packaging/packages/cloud-init.git
 cmake 34717d0847e2be15bc3b6a66f3a4ab2e430bff2a https://gitlab.archlinux.org/archlinux/packaging/packages/cmake.git
+compiler-rt bd056b1aae566ddd9f982d5a5b9ccae93e50099c https://gitlab.archlinux.org/archlinux/packaging/packages/compiler-rt.git
 coreutils f33db1312f616064d4730f92e793d6a761a69e5a https://gitlab.archlinux.org/archlinux/packaging/packages/coreutils.git
 cpio a92dcfec3f9c0c8e0dae94dbd5ce8667e28fd072 https://gitlab.archlinux.org/archlinux/packaging/packages/cpio.git
 cppdap 4a8ba28125a5fcaf5870b47177bbd6b7949ed59d https://gitlab.archlinux.org/archlinux/packaging/packages/cppdap.git
@@ -26,6 +30,8 @@ curl 45e9c1b535b60dd96c05f0c5dc7c07a8ea5947ac https://gitlab.archlinux.org/archl
 cython 803d705dd505efa0e6c649164c2d609bb91121d9 https://gitlab.archlinux.org/archlinux/packaging/packages/cython.git
 db5.3 ef842314637f28c5ae1a5e803ad3799965c0f27e https://gitlab.archlinux.org/archlinux/packaging/packages/db5.3.git
 dbus f9960c26b0014b2b0b750425010feacda1b42be8 https://gitlab.archlinux.org/archlinux/packaging/packages/dbus.git
+debugedit 164830daec47050be93feffb795d7fc845fa90af https://gitlab.archlinux.org/archlinux/packaging/packages/debugedit.git
+dhcpcd aa2f769e2203b141aca4fc746d322868a42662a0 https://gitlab.archlinux.org/archlinux/packaging/packages/dhcpcd.git
 diffutils 63d25ebd4b3fc2850529955960643c07221bc233 https://gitlab.archlinux.org/archlinux/packaging/packages/diffutils.git
 docbook-xml d927be055fc562a570870e4b197254b04d028dd8 https://gitlab.archlinux.org/archlinux/packaging/packages/docbook-xml.git
 docbook-xsl bd8a2c168ded641ee96958c074d41010dc8e5a32 https://gitlab.archlinux.org/archlinux/packaging/packages/docbook-xsl.git
@@ -55,10 +61,12 @@ gyp 602ee84a4028d468431a12684a0bea63c7c37bc2 https://gitlab.archlinux.org/archli
 gzip 4b347e7230151d6980db3251f1c65a7b27956c10 https://gitlab.archlinux.org/archlinux/packaging/packages/gzip.git
 help2man e2c0cff5c9566eb76b322950e8ad85b6dd15e9cb https://gitlab.archlinux.org/archlinux/packaging/packages/help2man.git
 hicolor-icon-theme 671ceecae2fa1f55a7fef9ead1d4cecfb3010d62 https://gitlab.archlinux.org/archlinux/packaging/packages/hicolor-icon-theme.git
+htop 19c27fca071e7f37c6d70d2a85cac6b15f4b308f https://gitlab.archlinux.org/archlinux/packaging/packages/htop.git
 hwdata 51d93b3b4d53801ef687ef80c9c114eb243e50d2 https://gitlab.archlinux.org/archlinux/packaging/packages/hwdata.git
 iana-etc c5484926af06c592cd97bdf4e486b210fb6265f5 https://gitlab.archlinux.org/archlinux/packaging/packages/iana-etc.git
 icu 30c818dc5a32b217d738ba9a8d942f202dfd44c6 https://gitlab.archlinux.org/archlinux/packaging/packages/icu.git
 inetutils d8410cb37b77eafde97a741fa255bd270bef3ccf https://gitlab.archlinux.org/archlinux/packaging/packages/inetutils.git
+iproute2 aaba472abf3c2635a016d41ce4597733b8c9f329 https://gitlab.archlinux.org/archlinux/packaging/packages/iproute2.git
 isl 254dad53bc342a04c8b5d288989edf0d64fe84d4 https://gitlab.archlinux.org/archlinux/packaging/packages/isl.git
 jansson 7099734a6d46580fd37fe1773afd38b05275cb97 https://gitlab.archlinux.org/archlinux/packaging/packages/jansson.git
 json-c 8a1daf8921e589e429e5534fe08a0c4a9c8d5a78 https://gitlab.archlinux.org/archlinux/packaging/packages/json-c.git
@@ -70,6 +78,7 @@ krb5 32b702e4c0d55856cbdf5c9264d37fc628879712 https://gitlab.archlinux.org/archl
 libaio 461eeac270aa5d3174677c3061f1a870f93de6cc https://gitlab.archlinux.org/archlinux/packaging/packages/libaio.git
 libarchive 1cfaa8a6f9ba012b482e9544c4e5b662ef3ae911 https://gitlab.archlinux.org/archlinux/packaging/packages/libarchive.git
 libassuan 87e42f5b5fde977ec98cc72c7f5ef5ad1f257d8c https://gitlab.archlinux.org/archlinux/packaging/packages/libassuan.git
+libbsd d48ba9c6f2d2c442a9af5e3b7716b4a52b38656f https://gitlab.archlinux.org/archlinux/packaging/packages/libbsd.git
 libcap 1af5a8bd3ca74002d3422c1dfe0710d3f567502b https://gitlab.archlinux.org/archlinux/packaging/packages/libcap.git
 libcap-ng 6fb7f460cee1dd2c99bd7aea2a69b86bf122ab7c https://gitlab.archlinux.org/archlinux/packaging/packages/libcap-ng.git
 libedit faca0e08b34ee896a6240b3771eab84df0292d32 https://gitlab.archlinux.org/archlinux/packaging/packages/libedit.git
@@ -82,9 +91,11 @@ libidn2 7254392fe9adbba2842442e66bafca2fe9cd761c https://gitlab.archlinux.org/ar
 libjpeg-turbo c26b61b4b450d9ff606d695a5ab4b0d96dcf7cc9 https://gitlab.archlinux.org/archlinux/packaging/packages/libjpeg-turbo.git
 libksba 0cb32bfe33f9164d6a442f0a01f44eab7c9cc711 https://gitlab.archlinux.org/archlinux/packaging/packages/libksba.git
 libmakepkg-dropins 7ed7cbb353a988d994b3cb6d1f84f1846c4a1569 https://gitlab.archlinux.org/archlinux/packaging/packages/libmakepkg-dropins.git
+libmd 1bdbc09e7bb2854ec3f79e8081acda1a8e247083 https://gitlab.archlinux.org/archlinux/packaging/packages/libmd.git
 libmicrohttpd 664d951bda570500fb90cfa7c09c6cf9e9a6ff40 https://gitlab.archlinux.org/archlinux/packaging/packages/libmicrohttpd.git
 libmpc 6e8d5f209c5dfb2d2baee32acc85b79124c63362 https://gitlab.archlinux.org/archlinux/packaging/packages/libmpc.git
 libnghttp2 40f0611c83a4b35926b181318365699f0c5a5530 https://gitlab.archlinux.org/archlinux/packaging/packages/libnghttp2.git
+libnl 032f96a8df38575ed6aa59f99f085b0e14652813 https://gitlab.archlinux.org/archlinux/packaging/packages/libnl.git
 libnsl dbea5e4a59907a7f968cbc7af3ee9bc06cb8fef5 https://gitlab.archlinux.org/archlinux/packaging/packages/libnsl.git
 libpsl fab5ebccddcf0368fe1912b617b4ad6d0e228237 https://gitlab.archlinux.org/archlinux/packaging/packages/libpsl.git
 libsasl fe194d6f4952a9d4f242b7bad516ceb4474e0d1b https://gitlab.archlinux.org/archlinux/packaging/packages/libsasl.git
@@ -102,6 +113,7 @@ libverto 863a2e0e0b079d9d215da38e40e1a675202d9eba https://gitlab.archlinux.org/a
 libxcrypt 678cc689bd7336d2487965a9018a214426cb27c2 https://gitlab.archlinux.org/archlinux/packaging/packages/libxcrypt.git
 libxml2 68bb2c304fb0220e791a60eb326bb8baf3d0b813 https://gitlab.archlinux.org/archlinux/packaging/packages/libxml2.git
 libxslt ae2998e51f2c294a8b697b53669df27479c96494 https://gitlab.archlinux.org/archlinux/packaging/packages/libxslt.git
+libyaml 274ea03cc9f084994f02d264d3ada7f3d2f4ed0a https://gitlab.archlinux.org/archlinux/packaging/packages/libyaml.git
 licenses f350b4965ef8c70408945fe14f063d58cf3ffd65 https://gitlab.archlinux.org/archlinux/packaging/packages/licenses.git
 linux dfb7f824956961a786b7820afe44f9b7549e13bb https://gitlab.archlinux.org/archlinux/packaging/packages/linux.git
 linux-api-headers 61a5b4eec7dc4d0f65c2480a7fa5f3f92fcfdeb2 https://gitlab.archlinux.org/archlinux/packaging/packages/linux-api-headers.git
@@ -112,6 +124,7 @@ lvm2 41d043868d89148475f6b35049d0cf915346a309 https://gitlab.archlinux.org/archl
 lz4 076c161de8c991f45091bf62a0cc39ddc5a45445 https://gitlab.archlinux.org/archlinux/packaging/packages/lz4.git
 m4 8d427e7ad898cf68d466d24663445319e50c0438 https://gitlab.archlinux.org/archlinux/packaging/packages/m4.git
 make 4d865385b09185093589a83352c10b81c56f0624 https://gitlab.archlinux.org/archlinux/packaging/packages/make.git
+maturin 2541495b99a798573a204d4ed19340a8c93277f9 https://gitlab.archlinux.org/archlinux/packaging/packages/maturin.git
 meson ff8fdbf2ebc0b792940ddfefdcf51fcba180535a https://gitlab.archlinux.org/archlinux/packaging/packages/meson.git
 mpdecimal 97bd21a0ac8a8268e0ed8b2c73addf307c7e3be5 https://gitlab.archlinux.org/archlinux/packaging/packages/mpdecimal.git
 mpfr e27b6c97553f1975c5aed9214421c3f804cd9cc6 https://gitlab.archlinux.org/archlinux/packaging/packages/mpfr.git
@@ -123,12 +136,14 @@ npth 1b2368b8edfe8b8c8d247776f1836157ba2daabc https://gitlab.archlinux.org/archl
 nspr 342de75dc3fa9529664070f60367e134d54f7e08 https://gitlab.archlinux.org/archlinux/packaging/packages/nspr.git
 nss d2bfe1eaed93ae02efe69baa0ffb393687bcccd3 https://gitlab.archlinux.org/archlinux/packaging/packages/nss.git
 numactl 49f2db1fa2cade222cce827ec7d11dbb6a5a58f2 https://gitlab.archlinux.org/archlinux/packaging/packages/numactl.git
+openbsd-netcat 5bbc9fa9671da36cdece8ad5bd21739e8ee806a6 https://gitlab.archlinux.org/archlinux/packaging/packages/openbsd-netcat.git
 openldap 5aa84bc5167fb8ad392136496e7cd518415ff430 https://gitlab.archlinux.org/archlinux/packaging/packages/openldap.git
 openssh 87ce57139f3b40e1fb20b85128fb5b10b9128f40 https://gitlab.archlinux.org/archlinux/packaging/packages/openssh.git
 openssl 7ccf1c694a2b13124db1867a83354419d61155f1 https://gitlab.archlinux.org/archlinux/packaging/packages/openssl.git
 p11-kit 88d86284cb6640d38872f49b0ae40885901083ec https://gitlab.archlinux.org/archlinux/packaging/packages/p11-kit.git
 pacman abdc0dfedf3ca553a02dde8551e972fe745535b7 https://gitlab.archlinux.org/archlinux/packaging/packages/pacman.git
 pacman-mirrorlist cdd43159511061a3705873ea9356f99f0abea832 https://gitlab.archlinux.org/archlinux/packaging/packages/pacman-mirrorlist.git
+pahole ac243dde8012371537118923bd9f3d03817826da https://gitlab.archlinux.org/archlinux/packaging/packages/pahole.git
 pam b37ce90d5b3ecbc83f9ca1c0644a5c055f51b89f https://gitlab.archlinux.org/archlinux/packaging/packages/pam.git
 pambase 18ff110e2b4181d8b84bccdf86525cf2a50ad20d https://gitlab.archlinux.org/archlinux/packaging/packages/pambase.git
 patch 1510b48e7c483c2b2390da6db729bae2bc224c31 https://gitlab.archlinux.org/archlinux/packaging/packages/patch.git
@@ -145,24 +160,55 @@ pinentry 960a245f317f34fce281246f46d66f0d9b9d5eae https://gitlab.archlinux.org/a
 pkgconf fd5cdd4c656e1d7db763518d55a95f085e80a6f1 https://gitlab.archlinux.org/archlinux/packaging/packages/pkgconf.git
 popt a40d1ac24230f1aab1034cf67423694fcbe3be4c https://gitlab.archlinux.org/archlinux/packaging/packages/popt.git
 postgresql 90f0a1761da0d5bd7fb296f848c36e925c84f549 https://gitlab.archlinux.org/archlinux/packaging/packages/postgresql.git
+procps-ng d73e5d365838b0bc5851bd42528aed1194a703bb https://gitlab.archlinux.org/archlinux/packaging/packages/procps-ng.git
 publicsuffix-list 3d200a288c966353b3638eb2e0aeabcbf8c2ba88 https://gitlab.archlinux.org/archlinux/packaging/packages/publicsuffix-list.git
 python 3254b074f643d1fe29c72516f4ccb5dc4eeba2ac https://gitlab.archlinux.org/archlinux/packaging/packages/python.git
+python-attrs 213612c1950d38555f61ce197c4b05f1bbf95ad5 https://gitlab.archlinux.org/archlinux/packaging/packages/python-attrs.git
 python-build 4d3e49b21fdb9e3648ca89bae4f27cb9a3681b78 https://gitlab.archlinux.org/archlinux/packaging/packages/python-build.git
+python-calver 45422ce3b4a30b358e60f2c1517db03ecba3dfb4 https://gitlab.archlinux.org/archlinux/packaging/packages/python-calver.git
+python-certifi e4b3adbc0d4b5916d410efcd8cdc4a453220bb00 https://gitlab.archlinux.org/archlinux/packaging/packages/python-certifi.git
+python-charset-normalizer 64e20a57a0a623b53b0c0f8220662384fb7a6b7c https://gitlab.archlinux.org/archlinux/packaging/packages/python-charset-normalizer.git
+python-configobj 059bc5aafe4ff777d4698c94c67fba11f3852aa1 https://gitlab.archlinux.org/archlinux/packaging/packages/python-configobj.git
+python-editables adee616327d2af77154b2b34358813078a3e3531 https://gitlab.archlinux.org/archlinux/packaging/packages/python-editables.git
 python-fastjsonschema 5160e0bd608c23fb9f8cef53392a47d7f8156747 https://gitlab.archlinux.org/archlinux/packaging/packages/python-fastjsonschema.git
 python-flit-core 85b6eb1e07f482cd748b30e6feee8b3d09c443d1 https://gitlab.archlinux.org/archlinux/packaging/packages/python-flit-core.git
+python-hatch-fancy-pypi-readme 9048a4dae3ccaa4fd7022d193c4fe377919c27b7 https://gitlab.archlinux.org/archlinux/packaging/packages/python-hatch-fancy-pypi-readme.git
+python-hatch-vcs c397f619e07462313c58cae074c9c1a7d964c7a5 https://gitlab.archlinux.org/archlinux/packaging/packages/python-hatch-vcs.git
+python-hatchling 75dca0c1dc23519b5d12698d27077ee727a69047 https://gitlab.archlinux.org/archlinux/packaging/packages/python-hatchling.git
+python-idna d3ae4e94b1295e882613894828a38a105e933990 https://gitlab.archlinux.org/archlinux/packaging/packages/python-idna.git
 python-installer eac45dc1cca1a3e08192ded2f206b9882ba62559 https://gitlab.archlinux.org/archlinux/packaging/packages/python-installer.git
 python-jinja d39adbed48638fb2aeec1fa3c14a829e6498ffaf https://gitlab.archlinux.org/archlinux/packaging/packages/python-jinja.git
+python-jsonpatch 33ffeb881e382956a22a3f23aa54749eb1eadd62 https://gitlab.archlinux.org/archlinux/packaging/packages/python-jsonpatch.git
+python-jsonpointer f31d2f35c2da704a5c791ef6fbb20b0a0fbb43d2 https://gitlab.archlinux.org/archlinux/packaging/packages/python-jsonpointer.git
+python-jsonschema 3054d9342ddaa0d4acc8f95268f18c16c7ce7833 https://gitlab.archlinux.org/archlinux/packaging/packages/python-jsonschema.git
+python-jsonschema-specifications a19abc2c41beaeae14a7a093e81c81cb4f8dd86e https://gitlab.archlinux.org/archlinux/packaging/packages/python-jsonschema-specifications.git
+python-lark-parser 0f8205e5418e0f9ea95a6ec2e0f449a02d10239f https://gitlab.archlinux.org/archlinux/packaging/packages/python-lark-parser.git
 python-markupsafe bf271fe95f2b5706e30bd2278848ed344854b2f8 https://gitlab.archlinux.org/archlinux/packaging/packages/python-markupsafe.git
+python-netifaces 9a2bb8b0157c7b343cbb9fa354dd6a035fc9813d https://gitlab.archlinux.org/archlinux/packaging/packages/python-netifaces.git
+python-oauthlib 06e68e5f03dfb85062f929b51632567d004e2ef5 https://gitlab.archlinux.org/archlinux/packaging/packages/python-oauthlib.git
 python-packaging a61fb6392a3d58655c46d6fba09f8edb978bb562 https://gitlab.archlinux.org/archlinux/packaging/packages/python-packaging.git
+python-pathspec 2dc661f9f564b467ab21c00db4da5c353d389848 https://gitlab.archlinux.org/archlinux/packaging/packages/python-pathspec.git
 python-pkgconfig 3f70bf174624c01d2ac1431430f9f5ddd0aca302 https://gitlab.archlinux.org/archlinux/packaging/packages/python-pkgconfig.git
+python-pluggy 9de84d22a1243fdc3857c2103a493f2ff1839743 https://gitlab.archlinux.org/archlinux/packaging/packages/python-pluggy.git
 python-poetry-core 89a9484a143dbd201c625e54a46a9902f40b6fe4 https://gitlab.archlinux.org/archlinux/packaging/packages/python-poetry-core.git
 python-psutil 2b1a67baba2a84491041fc529e27ab825718d5b0 https://gitlab.archlinux.org/archlinux/packaging/packages/python-psutil.git
+python-pygments dbd6c64f49fb9234fa41e341f1ebfcd785f82f17 https://gitlab.archlinux.org/archlinux/packaging/packages/python-pygments.git
 python-pyproject-hooks 3f43005e004dd15d6aa2dde0cd3f34886f954b2c https://gitlab.archlinux.org/archlinux/packaging/packages/python-pyproject-hooks.git
+python-pyserial cdb72ac7e6cdf789c8d06a3fd93fd36bd80b3b49 https://gitlab.archlinux.org/archlinux/packaging/packages/python-pyserial.git
+python-referencing b9498c9b269669ebd318578066547d49fe0781c7 https://gitlab.archlinux.org/archlinux/packaging/packages/python-referencing.git
+python-requests 7dc0250289aa7f3019485f62b54e6155fb5f5231 https://gitlab.archlinux.org/archlinux/packaging/packages/python-requests.git
+python-rpds-py 077a652abfd41a86ca1eccf95d883eb339c4fab6 https://gitlab.archlinux.org/archlinux/packaging/packages/python-rpds-py.git
+python-semantic-version dabbe2342fc95a585ec2f2598b8978e976613b6f https://gitlab.archlinux.org/archlinux/packaging/packages/python-semantic-version.git
 python-setuptools 8b56f5626b15d6b62ea6653e34e93d3a7e6dbb3e https://gitlab.archlinux.org/archlinux/packaging/packages/python-setuptools.git
+python-setuptools-rust fed6ada02a9d737fbcd525f4ba9b04a7e34e9b4b https://gitlab.archlinux.org/archlinux/packaging/packages/python-setuptools-rust.git
 python-setuptools-scm d58e8364e8bc47b9f01ee459f31212f5c7c00d2e https://gitlab.archlinux.org/archlinux/packaging/packages/python-setuptools-scm.git
 python-tqdm e0b7ec5522cc742812ba067fab0c0db660333063 https://gitlab.archlinux.org/archlinux/packaging/packages/python-tqdm.git
+python-trove-classifiers 687a98e60d19fa787821d95332293915a297ee2e https://gitlab.archlinux.org/archlinux/packaging/packages/python-trove-classifiers.git
+python-typing_extensions e39a6e6b7781e7e163c8cdb71aa1db222d73a5e5 https://gitlab.archlinux.org/archlinux/packaging/packages/python-typing_extensions.git
+python-urllib3 d690bfb6d96569a676b988ff42a2121a9405f304 https://gitlab.archlinux.org/archlinux/packaging/packages/python-urllib3.git
 python-vcs-versioning 86fac49f3111ee3a77cc438d134c2d4fd794a556 https://gitlab.archlinux.org/archlinux/packaging/packages/python-vcs-versioning.git
 python-wheel fa134ae45e7a48fc26dbb5c7aa4a78c16f9f61dd https://gitlab.archlinux.org/archlinux/packaging/packages/python-wheel.git
+python-yaml 3d4095b30bc38fa9148adfc521d019e02a51ab9d https://gitlab.archlinux.org/archlinux/packaging/packages/python-yaml.git
 qpdf 06c95260342580c93e227e8cc29503a997b7a185 https://gitlab.archlinux.org/archlinux/packaging/packages/qpdf.git
 readline 562fc3dc105d29b06ad9bfae84e27387d1d50b6a https://gitlab.archlinux.org/archlinux/packaging/packages/readline.git
 rhash 61d85647a7448bab282f716abed0cdfb7709cdce https://gitlab.archlinux.org/archlinux/packaging/packages/rhash.git
@@ -172,6 +218,7 @@ scdoc b64728f57c4dc9ea783ad8784244892cba6b514d https://gitlab.archlinux.org/arch
 sed 780ca8fdf9c24e621892422449f81258c1bc557b https://gitlab.archlinux.org/archlinux/packaging/packages/sed.git
 shadow b9fd1505550d16a29861b4a0f6ac2de9a6d51a5a https://gitlab.archlinux.org/archlinux/packaging/packages/shadow.git
 sqlite 214bd51b91465641e9e4d9a7e4a6e0b008ccb5b6 https://gitlab.archlinux.org/archlinux/packaging/packages/sqlite.git
+sudo 50f8a7de015d11d68ec56c9fee779773e2b9becb https://gitlab.archlinux.org/archlinux/packaging/packages/sudo.git
 swig f0a3306021a19081736d55fa70c406d933ecdd9e https://gitlab.archlinux.org/archlinux/packaging/packages/swig.git
 systemd c308648aad46596b85bed9ca75c2b0148c9ee0f2 https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git
 tar 5a387a9a4b6c783d80f406b26ddf079c435ffced https://gitlab.archlinux.org/archlinux/packaging/packages/tar.git
