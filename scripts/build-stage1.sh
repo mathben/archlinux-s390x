@@ -123,7 +123,32 @@ main() {
     done
     echo
     echo "== stage 1: $ok built, $fail failed =="
-    [ "$fail" -eq 0 ] || printf '  failed: %s\n' "${failed[*]}"
+    # A stage-1 run is never expected to be clean: seven packages cannot build
+    # outside the chroot, and their names are recorded in packages.sh. Printing
+    # one undifferentiated list makes a reader compare it against prose every
+    # time, and a real regression hides among names that belong there.
+    local expected=() unexpected=()
+    local p q
+    for p in "${failed[@]}"; do
+        local known=0
+        for q in "${STAGE1_EXPECTED_FAILURES[@]}"; do
+            [ "$p" = "$q" ] && { known=1; break; }
+        done
+        if [ "$known" -eq 1 ]; then expected+=("$p"); else unexpected+=("$p"); fi
+    done
+    [ "${#expected[@]}" -eq 0 ] || \
+        printf '  expected (see STAGE1_EXPECTED_FAILURES): %s\n' "${expected[*]}"
+    if [ "${#unexpected[@]}" -eq 0 ]; then
+        [ "$fail" -eq 0 ] || echo "  no unexpected failure"
+    else
+        printf '  UNEXPECTED: %s\n' "${unexpected[*]}"
+    fi
+    # An expected failure that stopped happening is news too: the list is wrong
+    # from that moment, and saying so is what keeps it from drifting into prose
+    # nobody rechecks.
+    for q in "${STAGE1_EXPECTED_FAILURES[@]}"; do
+        built "$q" && printf '  now builds, drop it from STAGE1_EXPECTED_FAILURES: %s\n' "$q"
+    done
 }
 
 main "$@"

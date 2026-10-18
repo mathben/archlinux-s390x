@@ -566,3 +566,27 @@ STAGE1_PACKAGES=(
     # defconfig and verifies sixteen symbols before the build proceeds.
     linux
 )
+
+# Packages a stage-1 run is EXPECTED to report as failed.
+#
+# Each one is a closure gap, not a defect: the recipe needs something the port
+# builds itself and the host cannot supply -- our llvm, our libxml2 -- or a
+# source that upstream withdrew. The reason for each is written beside the
+# package in STAGE1_PACKAGES above; this list exists so the summary can
+# separate them from a real regression, and so a reader comparing two runs can
+# see at a glance whether the failures are the usual ones.
+#
+# A name belongs here only when the reason is permanent for stage 1. A package
+# that fails because the host is missing a dependency it COULD have does not:
+# that is a gap to close in install_host_packages, not an expectation to
+# record. Removing a name is as meaningful as adding one -- it says stage 1
+# now reaches further than it did.
+STAGE1_EXPECTED_FAILURES=(
+    clang       # needs llvm-gtest, which our llvm ships and the host has not
+    compiler-rt # built against our llvm, newer than the host's
+    lld         # same
+    rust        # same, and depends on lld
+    libxslt     # needs libxml2 >= 2.15.1; the host has an older one
+    libaio      # upstream withdrew the release tarball
+    postgresql  # configures --with-llvm against the host's older LLVM
+)
