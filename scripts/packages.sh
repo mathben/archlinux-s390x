@@ -499,6 +499,13 @@ STAGE1_PACKAGES=(
     # a closure computed from `depends` alone did not find them: trove-
     # classifiers stops on calver, hatchling on pluggy and trove-classifiers.
     python-calver python-pluggy
+    # python-tomlkit is a RUNTIME dependency of hatchling, not a build one, so
+    # neither a backend failure nor the build-order reasoning above pointed at
+    # it: hatchling built, landed in the repository, and nothing could install
+    # it. Only asking pacman to resolve the whole repository shows that kind of
+    # hole -- a package comparison against the build list never will, the name
+    # not being in the list to begin with.
+    python-tomlkit
     python-trove-classifiers python-hatchling python-poetry-core
     # hatchling's plugins, which are not hatchling: a package whose version
     # comes from git needs hatch-vcs, and hatchling reports its absence as

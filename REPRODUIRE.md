@@ -128,6 +128,32 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+### L'épreuve RESOLVE voit ce que le registre ne voit pas
+
+Comparer `stage1.state` à `STAGE1_PACKAGES` dit ce qui n'a pas BÂTI. Cela ne
+dit rien d'un paquet qui a bâti, est entré au dépôt, et que personne ne peut
+installer parce qu'une de ses dépendances n'a jamais été listée — le nom
+manquant n'étant pas dans la liste, aucune comparaison à la liste ne le
+trouve. Il faut demander à pacman de résoudre le dépôt ENTIER :
+
+```bash
+cat > /tmp/r.conf <<'CONF'
+[options]
+Architecture = s390x
+SigLevel = Never
+[core]
+Server = file:///home/<compte>/work/arch-s390x/repo/s390x
+CONF
+sudo pacman --config /tmp/r.conf --dbpath /tmp/r.db -Sy
+mapfile -t ALL < <(sudo pacman --config /tmp/r.conf --dbpath /tmp/r.db -Sl core | awk '{print $2}')
+sudo pacman --config /tmp/r.conf --dbpath /tmp/r.db -Sp "${ALL[@]}" 2>&1 \
+  | grep -oE "dependency '[^']+'" | sort -u
+```
+
+Chaque nom sorti est soit un paquet que l'étage 1 ne peut pas bâtir, soit un
+trou dans la liste. C'est ainsi que `python-tomlkit` a été trouvé : dépendance
+d'exécution de hatchling, jamais listée, donc jamais signalée.
+
 ## 1 bis. Le miroir des recettes
 
 Les 229 recettes viennent d'un seul hôte. Quand il tombe, tout paquet dont
@@ -160,6 +186,10 @@ PKG_GIT_BASE="file://$HOME/work/arch-s390x/recettes-arch-s390x" \
 
 **Vérifié** : 229 dépôts nus, 55 Mo, et les 186 commits épinglés tous
 présents. Clone, `--depth 1` et résolution du commit fonctionnent en local.
+
+**Le miroir suit la liste, et ne la devance pas.** Il est fabriqué à partir
+des noms de `STAGE1_PACKAGES` : ajouter un paquet à la liste veut dire cloner
+sa recette en plus, sinon il échouera comme si l'amont était tombé.
 
 **L'amont compte les requêtes.** Six clones en parallèle font répondre
 `HTTP 429 Too Many Requests` à partir du deux-centième dépôt environ, et des
