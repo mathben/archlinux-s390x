@@ -197,6 +197,13 @@ install_host_deps() {
     #   elfutils          eu-strip, which debugedit's configure requires:
     #                     "eu-strip needed by find-debuginfo"
     #   libedit-dev       openssh's configure stops on "libedit not found"
+    #   libksba-dev       gnupg's configure: "You need libksba to build this
+    #                     program", printed twelve lines above the error it
+    #                     ends on, which names nothing
+    #   libmagic-dev      util-linux's meson: Dependency "libmagic" not found
+    #   psutils           psselect, which pre-grohtml runs while building
+    #                     groff's own doc/webpage.html; its absence surfaces
+    #                     as "'pre-grohtml' exited with status 4"
     #
     # python-is-python3, AND WHY IT IS NOT OPTIONAL.
     #
@@ -228,7 +235,7 @@ install_host_deps() {
         python3-setuptools python3-wheel python-is-python3 \
         patchelf gtk-doc-tools systemd-dev libnpth0-dev libunistring-dev \
         flit python3-hatchling python3-poetry-core \
-        elfutils libedit-dev \
+        elfutils libedit-dev libksba-dev libmagic-dev psutils \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
