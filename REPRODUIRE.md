@@ -170,7 +170,7 @@ et une attente qui se compte en minutes sur un 429.
 
 ### Sept échecs sont normaux, et la liste les nomme
 
-Une passe d'étage 1 n'est JAMAIS propre. Neuf paquets ne peuvent pas se bâtir
+Une passe d'étage 1 n'est JAMAIS propre. Huit paquets ne peuvent pas se bâtir
 hors du chroot : il leur faut le llvm, le libxml2 ou le rust que le portage
 produit lui-même, ou bien l'amont a retiré leur source. Ce n'est pas un défaut à
 corriger, c'est un trou de fermeture que l'étage 2 comble.
@@ -180,8 +180,8 @@ Ils sont nommés dans `STAGE1_EXPECTED_FAILURES`, à la fin de
 la liste principale. Le résumé de fin de passe les sépare tout seul :
 
 ```
-== stage 1: 219 built, 9 failed ==
-  expected (see STAGE1_EXPECTED_FAILURES): clang compiler-rt lld rust libxslt libaio postgresql maturin python-rpds-py
+== stage 1: 220 built, 8 failed ==
+  expected (see STAGE1_EXPECTED_FAILURES): clang lld rust libxslt libaio postgresql maturin python-rpds-py
   no unexpected failure
 ```
 

@@ -586,7 +586,6 @@ STAGE1_PACKAGES=(
 # now reaches further than it did.
 STAGE1_EXPECTED_FAILURES=(
     clang       # needs llvm-gtest, which our llvm ships and the host has not
-    compiler-rt # built against our llvm, newer than the host's
     lld         # same
     rust        # same, and depends on lld
     libxslt     # needs libxml2 >= 2.15.1; the host has an older one
