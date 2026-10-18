@@ -180,6 +180,24 @@ install_host_deps() {
     #   libunistring-dev  gnutls' configure stops on "library containing
     #                   u8_normalize... no", which names a symbol, not a package
     #
+    # AND THE PYTHON BUILD BACKENDS, which stage 1 needs on the HOST.
+    #
+    # Stage 1 builds with the host's python, so a wheel whose pyproject.toml
+    # names a backend the host lacks stops before compiling anything:
+    #
+    #   BackendUnavailable: Cannot import 'flit_core.buildapi'
+    #
+    # Twenty-eight python-* packages failed on that one line. The port builds
+    # its own python-flit-core and puts it in the repository -- which does
+    # nothing for a stage-1 build running outside it. Ubuntu has no
+    # python3-flit-core; `flit` carries the module.
+    #   flit              flit_core, for every wheel built with it
+    #   python3-hatchling hatchling, same role
+    #   python3-poetry-core  poetry.core, same role
+    #   elfutils          eu-strip, which debugedit's configure requires:
+    #                     "eu-strip needed by find-debuginfo"
+    #   libedit-dev       openssh's configure stops on "libedit not found"
+    #
     # python-is-python3, AND WHY IT IS NOT OPTIONAL.
     #
     # On Arch, `python` IS python3; Ubuntu ships only `python3`. Several
@@ -209,6 +227,8 @@ install_host_deps() {
         cmake python3-build python3-installer python3-pkgconfig \
         python3-setuptools python3-wheel python-is-python3 \
         patchelf gtk-doc-tools systemd-dev libnpth0-dev libunistring-dev \
+        flit python3-hatchling python3-poetry-core \
+        elfutils libedit-dev \
         libicu-dev \
         libbpf-dev clang libapparmor-dev libfdisk-dev libkmod-dev libdw-dev \
         libpwquality-dev libxkbcommon-dev libdbus-1-dev libqrencode-dev \
