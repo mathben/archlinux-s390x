@@ -282,6 +282,19 @@ STAGE1_PACKAGES=(
     # list -- and cmake is not optional here: the whole cmake/cppdap/jsoncpp/
     # libuv group behind it is what several other packages build with.
     nlohmann-json
+    # python-vcs-versioning: setuptools-scm was split, and its own build now
+    # imports the half that left:
+    #
+    #   from vcs_versioning import Configuration
+    #   ModuleNotFoundError: No module named 'vcs_versioning'
+    #
+    # The traceback runs through setuptools' build_meta, so the visible error is
+    # "Backend subprocess exited when trying to invoke build_wheel" -- a backend
+    # complaint about a package that split upstream.
+    # It is listed BEFORE python-setuptools-scm, which imports it while
+    # building: the list is a build order, and a provider placed after its
+    # consumer only works because a second pass picks it up.
+    python-vcs-versioning
     # python-setuptools-scm: python-tqdm's build stops on
     #
     #   setuptools-scm[toml]>=3.4
@@ -331,16 +344,6 @@ STAGE1_PACKAGES=(
     # flit_core, setuptools, hatchling and now poetry-core -- each package picks
     # its own, and each one has to exist before that package can be built.
     python-poetry-core
-    # python-vcs-versioning: setuptools-scm was split, and its own build now
-    # imports the half that left:
-    #
-    #   from vcs_versioning import Configuration
-    #   ModuleNotFoundError: No module named 'vcs_versioning'
-    #
-    # The traceback runs through setuptools' build_meta, so the visible error is
-    # "Backend subprocess exited when trying to invoke build_wheel" -- a backend
-    # complaint about a package that split upstream.
-    python-vcs-versioning
     # python-fastjsonschema: poetry-core validates pyproject.toml against a JSON
     # schema, so it needs a schema validator to build anything -- including
     # itself. ModuleNotFoundError: No module named 'fastjsonschema'.

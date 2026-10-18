@@ -400,20 +400,34 @@ install_host_shims() {
 #                             release and rejects classifiers a current recipe
 #                             declares: "Unknown classifier in field
 #                             `project.classifiers`"
+#   python-packaging          the distribution's is older than the floor a
+#                             recipe declares, and the backend reports only
+#                             "Missing dependencies: packaging>=26.2"
+#   python-vcs-versioning     no package in the distribution; setuptools-scm
+#                             was split and imports it while building
+#   python-setuptools-scm     the distribution's predates the floor recipes
+#                             declare
+#   python-setuptools-rust    same, and maturin builds against it
 #
 # Build order already satisfies the dependency: the provider is listed before
 # its consumers in STAGE1_PACKAGES.
-HOST_PYTHON_MODULES="python-calver python-trove-classifiers"
+HOST_PYTHON_MODULES="python-calver python-trove-classifiers
+                    python-packaging python-vcs-versioning
+                    python-setuptools-scm python-setuptools-rust"
 
 # Takes a package name, installs its python module on the host when the name is
 # listed above, and returns 0 otherwise. Reads the newest matching archive in
 # $REPO; a package carrying no dist-packages tree is a no-op.
 install_host_python_module() {
-    local name="$1" f d tmp
-    case " $HOST_PYTHON_MODULES " in
-        *" $name "*) ;;
-        *) return 0 ;;
-    esac
+    local name="$1" f d tmp listed
+    # Word-by-word, not a glob on the raw string: the list spans several lines,
+    # and a name followed by a newline does not match a pattern asking for a
+    # space around it.
+    listed=0
+    for _m in $HOST_PYTHON_MODULES; do
+        [ "$_m" = "$name" ] && { listed=1; break; }
+    done
+    [ "$listed" -eq 1 ] || return 0
     f=$(ls -1t "$REPO/$name"-*.pkg.tar.* 2>/dev/null | head -1)
     [ -n "$f" ] || return 0
     d="/usr/local/lib/python$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')/dist-packages"
