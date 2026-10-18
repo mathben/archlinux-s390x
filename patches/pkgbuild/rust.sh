@@ -137,11 +137,38 @@ lines.insert(hit[0] + 1, "b2sums_s390x=('%s')" % _b2)
 s = "\n".join(lines)
 
 # 2. the system-stage0 workaround, which a downloaded stage0 does not want.
+#
+# A source entry and its checksum are matched BY POSITION, so removing one
+# without the other shifts every sum after it onto the wrong file. makepkg
+# reports only the count:
+#
+#   ==> ERROR: Integrity checks (b2) differ in size from the source array.
+#
+# The position is read from the array bash builds, not counted from the
+# lines: the tarball entry carries a brace expansion and stands for two.
+import subprocess
+_probe = ('CARCH=s390x; source ./PKGBUILD >/dev/null 2>&1; '
+          'for i in "${!source[@]}"; do '
+          '[ "${source[$i]}" = "%s" ] && echo "$i"; done'
+          % "0003-bootstrap-Workaround-for-system-stage0.patch")
+_out = subprocess.run(["bash", "-c", _probe],
+                      capture_output=True, text=True).stdout.split()
+assert len(_out) == 1, "rust: 0003 is not one source entry, got %r" % _out
+_idx = int(_out[0])
+assert _idx > 0, "rust: 0003 is the first source; the b2sums line also opens the array"
+
 lines = s.split("\n")
 hit = [i for i, l in enumerate(lines)
        if l.strip() == "0003-bootstrap-Workaround-for-system-stage0.patch"]
 assert len(hit) == 1, "rust: expected one 0003 patch entry, got %d" % len(hit)
 del lines[hit[0]]
+
+# Its checksum, at the same position. One entry per line in this block, which
+# the count below confirms before anything is deleted.
+_b0 = next(i for i, l in enumerate(lines) if l.startswith("b2sums=("))
+_b1 = next(i for i in range(_b0, len(lines)) if lines[i].rstrip().endswith(")"))
+assert _b1 - _b0 + 1 == _idx + 1 or _b1 > _b0 + _idx, "rust: b2sums block too short for index %d" % _idx
+del lines[_b0 + _idx]
 s = "\n".join(lines)
 
 # 3. only the two packages whose files this build actually produces.
@@ -184,6 +211,14 @@ ZZPY
 
 grep -q "^source_s390x=(bootstrap.s390x.toml)$" PKGBUILD || { echo "rust: source_s390x missing" >&2; exit 1; }
 grep -q "0003-bootstrap-Workaround" PKGBUILD && { echo "rust: the system-stage0 patch is still applied" >&2; exit 1; }
+# Sources and checksums are matched by position, and makepkg only ever reports
+# the count. Comparing the two arrays here names the recipe and the two
+# numbers, where makepkg names neither.
+bash -c 'CARCH=s390x; source ./PKGBUILD >/dev/null 2>&1
+  [ "${#source[@]}" -eq "${#b2sums[@]}" ] || {
+      echo "rust: ${#source[@]} sources for ${#b2sums[@]} b2sums" >&2; exit 1; }
+  [ "${#source_s390x[@]}" -eq "${#b2sums_s390x[@]}" ] || {
+      echo "rust: ${#source_s390x[@]} s390x sources for ${#b2sums_s390x[@]} sums" >&2; exit 1; }' || exit 1
 grep -qE "^\s+(rust-musl|rust-wasm|lib32-rust-libs)$" PKGBUILD && { echo "rust: a package with no targets is still listed" >&2; exit 1; }
 grep -qE "^\s+_pick dest-(musl|wasm)" PKGBUILD && { echo "rust: a _pick without a target survived" >&2; exit 1; }
 grep -qE "^\s+rustc = " bootstrap.s390x.toml && { echo "rust: the toml names a stage0 that does not exist" >&2; exit 1; }
