@@ -307,7 +307,20 @@ EOF
     shopt -s nullglob
     local cand=("$REPO2"/*.pkg.tar.*)
     shopt -u nullglob
+    # UNE SEULE VERSION PAR PAQUET, LA PLUS RECENTE.
+    #
+    # repo-add tient la base a jour, mais le FICHIER de l'ancienne version
+    # reste sur le disque : un paquet rebati a un pkgver different laisse deux
+    # archives cote a cote. La liste ci-dessus les ramasse toutes les deux, et
+    # pacman refuse le lot entier :
+    #
+    #   error: '.../python-rpds-py-<ancienne>.pkg.tar.zst': duplicate target
+    #
+    # Un seul doublon suffit a faire echouer la restauration, donc le demarrage
+    # de l'etage 2. Garder la plus recente par pkgname est ce que la base fait
+    # deja de son cote.
     local back=() inst f pn
+    local -A newest=()
     if [ "${#cand[@]}" -gt 0 ]; then
         inst=$(sudo pacman --root "$ROOT" --config "$CONF" -Qq 2>/dev/null)
         local pb
@@ -364,8 +377,12 @@ EOF
                     printf ' %s ' "${CHROOT_STAGE2_PKGS[*]}" | grep -q " $pn " || continue
                 fi
             fi
-            back+=("$f")
+            if [ -n "${newest[$pn]:-}" ] && [ "${newest[$pn]}" -nt "$f" ]; then
+                continue
+            fi
+            newest["$pn"]="$f"
         done
+        back=("${newest[@]}")
         printf '  %s of %s stage-2 package(s) are installed and still trusted\n' \
             "${#back[@]}" "${#cand[@]}"
     fi
