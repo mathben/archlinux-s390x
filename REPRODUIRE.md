@@ -213,6 +213,18 @@ Côté déclarations, l'écart dominant est que l'étage 1 annonce un soname NU
 `libacl.so=1-64`. Systématique, et sans rapport avec un paquet en
 particulier.
 
+**Un paquet d'étage 1 n'est pas le jumeau du sien à l'étage 2**, et cela se
+mesure. La bibliothèque zlib bâtie sur l'hôte n'expose AUCUN symbole
+versionné ; celle que l'étage 2 produit en expose 58 :
+
+```bash
+readelf -V /usr/lib/libz.so.1 | grep -c ZLIB_
+```
+
+Ce qui s'y lie l'ignore silencieusement jusqu'à ce qu'un outil s'en plaigne —
+« no version information available » — et un chroot qui garde la première
+version arrête la chaîne de compilation entière.
+
 **Ce qui mérite un regard** est le reste : un soname qu'un seul étage
 fournit, une dépendance qu'un seul déclare. Les trier revient à retirer les
 groupes où les deux côtés portent les mêmes noms à la version près :
