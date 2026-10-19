@@ -117,8 +117,42 @@ Peuple un chroot depuis l'étage 1 puis rebâtit tout avec la chaîne ainsi
 obtenue. Sortie dans `repo2/s390x`. Se termine par une épreuve RESOLVE qui
 demande à pacman si le dépôt entier s'installe d'un bloc.
 
-**Non vérifié dans cette passe.** L'étage 2 a tourné par le passé sur l'autre
-hôte ; il n'a pas été rejoué depuis la reconstruction.
+### UNE PASSE NE SUFFIT PAS, et ce n'est pas un défaut
+
+Le chroot s'enrichit à mesure que la liste avance : un paquet bâti y est
+installé, et devient disponible pour les suivants. Une recette qui réclame un
+outil placé APRÈS elle dans la liste échoue donc, puis passe au tour suivant,
+l'outil étant désormais là.
+
+Mesuré sur une passe : `m4` et `libtool` se sont arrêtés sur
+
+```
+bootstrap: error: Prerequisite 'help2man' not found.
+```
+
+alors que `help2man` répond dans le chroot — il y a été installé trois heures
+APRÈS leur tentative. Le message accuse une absence ; c'est un ordre.
+
+**Relancer la même commande** jusqu'à ce qu'une passe n'apporte plus rien. Les
+paquets déjà bâtis sont sautés, le registre étant `stage2.state`.
+
+### Lire les échecs : chercher la cause commune avant les causes propres
+
+Un échec à l'étage 2 en entraîne d'autres, et la liste brute le cache. Sur une
+passe de 36 échecs, **28 portaient la même ligne** :
+
+```
+/usr/lib/libz.so.1: no version information available
+```
+
+Un seul paquet — `zlib` — n'avait pas pu se rebâtir, le chroot gardait donc
+celui de l'étage 1, lié aux bibliothèques de l'hôte, et `binutils` puis `gcc`
+tombaient derrière. Compter les échecs qui partagent une ligne coûte une
+commande et désigne la racine :
+
+```bash
+grep -l "<la ligne suspecte>" ~/work/arch-s390x/stage2-log-*.txt | wc -l
+```
 
 ## 4. Vérifier
 
