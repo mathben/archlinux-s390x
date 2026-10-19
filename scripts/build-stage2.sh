@@ -102,6 +102,9 @@ CHROOT_PKGS=(
     #   swig      audit
     #   help2man  flex
     #   tcl       sqlite, dont le build appelle tclsh
+    #   libsodium openldap, dont le configure cherche sodium.h et s'arrete
+    #             sur « --enable_argon2=yes requires --with-argon2 »
+    #   unixodbc  openldap encore, qui le declare en makedepends
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -122,7 +125,7 @@ CHROOT_PKGS=(
     # BY stage 2 rather than installed into it, which is why it sits in
     # STAGE2_FIRST instead. Listing it here would fail make_rootfs with "target
     # not found" against a repository that will never contain it.
-    gperf wget patchelf inetutils swig help2man tcl
+    gperf wget patchelf inetutils swig help2man tcl libsodium unixodbc
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #
