@@ -101,6 +101,16 @@ CHROOT_PKGS=(
     #   libxslt   shadow, for xsltproc
     #   swig      audit
     #   help2man  flex
+    #   tcl       sqlite, dont le build appelle tclsh
+    #
+    # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
+    # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
+    # ete installe dans le chroot -- mais la passe suivante RECREE ce chroot,
+    # qui ne reprend que CHROOT_PKGS et ce que la restauration ramene. Un
+    # outil de construction bati en cours de route disparait donc a la
+    # relance, et sqlite s'arrete sur « tclsh: command not found » alors que
+    # tcl est dans repo2. Ce qu'une recette appelle doit etre nomme ici, et
+    # non herite d'une passe anterieure.
     #
     # libxslt is NOT here, and cannot be: it will not build on the host at all.
     #
@@ -112,7 +122,7 @@ CHROOT_PKGS=(
     # BY stage 2 rather than installed into it, which is why it sits in
     # STAGE2_FIRST instead. Listing it here would fail make_rootfs with "target
     # not found" against a repository that will never contain it.
-    gperf wget patchelf inetutils swig help2man
+    gperf wget patchelf inetutils swig help2man tcl
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #
