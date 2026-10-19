@@ -144,6 +144,13 @@ CHROOT_PKGS=(
     #             libxslt, a dependency of docbook-xsl ». Un nom present
     #             dans repo1 ne suffit pas : ses dependances doivent y etre
     #             aussi.
+    #   autoconf-archive  tpm2-tss, dont le configure.ac emploie huit
+    #             macros AX_. Leur absence ne donne PAS un message sur AX_ :
+    #             les appels restent non developpes, l'analyse se desorganise
+    #             et autoconf declare « undefined or overquoted macro:
+    #             AC_SUBST » -- une macro qu'il connait parfaitement. Un
+    #             configure.ac minimal passe dans le meme chroot, ce qui
+    #             innocente la chaine autotools et designe le paquet absent.
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -168,7 +175,7 @@ CHROOT_PKGS=(
     publicsuffix-list nspr zlib-ng libmd cpio llvm bc
     python-tomlkit python-pathspec python-pluggy python-trove-classifiers
     liburing numactl elfutils nlohmann-json cppdap bash-completion
-    perl-ipc-run perl-io-tty python-yaml python-requests docbook-xml
+    perl-ipc-run perl-io-tty python-yaml python-requests docbook-xml autoconf-archive
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #
