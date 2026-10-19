@@ -181,6 +181,37 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+### Ce que l'étage 2 donne quand il est fini
+
+```
+== 1. RESOLVE ==   ok    resolver satisfied
+== 2. ARTEFACT ==  ok    no multiarch, no lib64, no dist-packages, no usr/local
+== 3. SONAME ==    ok    every requested soname has a provider
+== 4. RUN ==       ok    bash, libc, ls, tar, find, sed, pacman
+== Verdict ==      the repository resolves, is clean, and runs.
+```
+
+**C'est le seul verdict qui compte**, et la section suivante dit à quoi il
+s'oppose. 228 paquets sur 229 : seul `libaio` manque, sa source ayant été
+retirée par son amont.
+
+**Deux pièges se sont révélés à ce moment précis**, et ni le registre ni les
+journaux ne les voyaient :
+
+- **Une dépendance impossible.** Trois paquets bâtis avant que `zlib` ne soit
+  réparé portaient `libz.so=libz.so-64`, que makepkg avait déduite d'une
+  bibliothèque sans version de soname. Corrects pour le registre, faux dans le
+  dépôt. Seule l'épreuve RESOLVE le dit.
+- **Un chemin absolu au lieu d'un soname.** Cinq paquets inscrivaient
+  `NEEDED [/usr/lib/libz.so]`, ce qu'un éditeur de liens ne fait que si la
+  bibliothèque n'a pas de champ SONAME — et le zlib de l'étage 1 n'en a pas.
+  Seule l'épreuve SONAME le dit.
+
+Dans les deux cas le remède est le même : **rebâtir en nommant le paquet**,
+ce qui prime désormais sur le registre. Un paquet bâti avant la réparation
+d'une bibliothèque qu'il utilise est à refaire, et rien ne le signale tout
+seul.
+
 ### Ce que `test-chroot.sh` donne sur un dépôt d'étage 1 SEUL
 
 Il ne rend pas un verdict propre, et ce n'est pas un défaut : il mesure un
