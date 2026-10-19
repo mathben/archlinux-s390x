@@ -119,6 +119,15 @@ CHROOT_PKGS=(
     #             quatre, et huit paquets se batissent avec hatchling :
     #             sans eux la grappe entiere tombe sur « Cannot import
     #             'hatchling.build' », qui ne nomme aucun des quatre.
+    #   liburing et numactl  postgresql, « Package requirements (liburing)
+    #             were not met »
+    #   elfutils  debugedit, « eu-strip needed by find-debuginfo »
+    #   nlohmann-json  cppdap, qui ne trouve pas sa configuration CMake
+    #   cppdap    cmake lui-meme : « CMAKE_USE_SYSTEM_CPPDAP is ON but a
+    #             cppdap is not found ». cmake ne se rebatit donc pas sans
+    #             un cppdap deja installe, et cppdap ne se batit pas sans
+    #             nlohmann-json -- les deux entrent ensemble ou pas du tout
+    #   bash-completion  cloud-init, dont meson en fait une dependance dure
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -142,6 +151,7 @@ CHROOT_PKGS=(
     gperf wget patchelf inetutils swig help2man tcl libsodium unixodbc
     publicsuffix-list nspr zlib-ng libmd cpio llvm bc
     python-tomlkit python-pathspec python-pluggy python-trove-classifiers
+    liburing numactl elfutils nlohmann-json cppdap bash-completion
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #
