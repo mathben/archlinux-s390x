@@ -128,6 +128,11 @@ CHROOT_PKGS=(
     #             un cppdap deja installe, et cppdap ne se batit pas sans
     #             nlohmann-json -- les deux entrent ensemble ou pas du tout
     #   bash-completion  cloud-init, dont meson en fait une dependance dure
+    #   perl-ipc-run et perl-io-tty  postgresql, dont le configure refuse
+    #             de continuer sans eux : « Can't locate IPC/Run.pm »,
+    #             --enable-tap-tests etant passe
+    #   python-yaml  cloud-init, dont le ninja genere ses units avec, et
+    #             s'arrete sur « No module named 'yaml' »
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -152,6 +157,7 @@ CHROOT_PKGS=(
     publicsuffix-list nspr zlib-ng libmd cpio llvm bc
     python-tomlkit python-pathspec python-pluggy python-trove-classifiers
     liburing numactl elfutils nlohmann-json cppdap bash-completion
+    perl-ipc-run perl-io-tty python-yaml
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #

@@ -74,3 +74,32 @@ PY
 [ "$(grep -c -- '--disable-selinux' PKGBUILD)" = 1 ] || {
     echo "lvm2: --disable-selinux not inserted exactly once" >&2; exit 1; }
 echo "lvm2: --disable-selinux (Arch has no libselinux; the host does)"
+
+# ET LA CIBLE DE make SUIT LE SOUS-PAQUET.
+#
+# Le pkgname reduit plus haut ne change pas ce que build() compile : un `make`
+# nu batit lvm2 entier, donc la moitie qui veut libaio. configure le dit en
+# toutes lettres avant de rendre la main :
+#
+#   checking for libaio.h... no
+#   configure: WARNING: Only libdm part can be build without libaio:
+#                       make [install_]device-mapper
+#
+# et la compilation s'arrete plus loin, dans lib/, sur une erreur qui ne parle
+# plus de libaio. La cible nommee est celle que package_device-mapper()
+# installe deja -- install_device-mapper -- donc les deux moities du PKGBUILD
+# disent desormais la meme chose.
+set -euo pipefail
+python3 - <<'ZZPY'
+import io
+s = io.open("PKGBUILD", encoding="utf-8").read()
+old = "\n  make\n}"
+assert s.count(old) == 1, "lvm2: un seul `make` nu attendu a la fin de build()"
+s = s.replace(old, "\n  # device-mapper seul : voir patches/pkgbuild/lvm2.sh.\n  make device-mapper\n}", 1)
+io.open("PKGBUILD", "w", encoding="utf-8").write(s)
+ZZPY
+grep -q "^  make device-mapper$" PKGBUILD || {
+    echo "lvm2: la cible du make n a pas ete posee" >&2; exit 1; }
+grep -qE "^  make$" PKGBUILD && {
+    echo "lvm2: un make nu subsiste" >&2; exit 1; }
+echo "lvm2: make device-mapper, la seule moitie qui se batisse sans libaio"
