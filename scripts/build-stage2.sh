@@ -931,7 +931,19 @@ NOTE
 #   running it, and its dependencies close the same circle. Arch's PKGBUILDs
 #   carry _bootstrap=1 for exactly this, and it must run in HERE rather than on
 #   the host, whose python would bake dist-packages into every one of them.
-STAGE2_FIRST=(texinfo libxml2 binutils pkgconf wget libxslt
+#   zlib -- EN PREMIER, et avant binutils. La bibliotheque bâtie sur l'hôte
+#   n'expose aucun symbole versionne la ou celle de l'etage 2 en expose
+#   seize ; `nm -D` le montre en une ligne, inflateReset2 contre
+#   inflateReset2@@ZLIB_1.2.3.4. Tout ce que l'etage 1 a lie contre le zlib
+#   DE L'HOTE garde la reference versionnee, et l'edition de liens casse des
+#   qu'on batit contre la version nue :
+#
+#     ld: libcurl.so.4: undefined reference to `inflateReset2@ZLIB_1.2.3.4'
+#
+#   binutils meurt la, gcc derriere lui, et git se met a se plaindre -- ce
+#   qui emporte toute recette dont prepare() clone quoi que ce soit. Un seul
+#   paquet mal place, et la moitie de la liste tombe.
+STAGE2_FIRST=(zlib texinfo libxml2 binutils pkgconf wget libxslt
               python-packaging python-pyproject-hooks python-build
               python-installer python-setuptools python-wheel
               python-setuptools-scm python-markupsafe python-jinja
