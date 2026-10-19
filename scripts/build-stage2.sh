@@ -1443,12 +1443,26 @@ Server = file://$REPO1
 EOF
 }
 
+# REBUILD_FORCED : un paquet NOMME se rebatit, qu'il soit au registre ou non.
+#
+# L'etage 1 tranche ainsi depuis longtemps, et pour la meme raison : sans
+# cela, refaire un paquet oblige a retirer son nom de stage2.state d'abord --
+# editer la memoire du portage pour construire. Or ce fichier est precisement
+# ce qui ne doit jamais etre edite a la main.
+#
+# Le besoin est reel et pas theorique. Trois paquets batis avant la reparation
+# de zlib portaient une dependance malformee, « libz.so=libz.so-64 », que
+# makepkg avait deduite d'une bibliotheque sans version de soname. Ils etaient
+# corrects du point de vue du registre et faux dans le depot, et c'est
+# l'epreuve RESOLVE qui l'a dit.
+REBUILD_FORCED=0
+
 rebuild() {
     write_conf2
     mkdir -p "$REPO2"
     local ok=0 fail=0 rc=0 failed=()
     for p in "$@"; do
-        if grep -qxF "$p" "$STATE2" 2>/dev/null; then
+        if [ "$REBUILD_FORCED" -eq 0 ] && grep -qxF "$p" "$STATE2" 2>/dev/null; then
             echo "== $p already rebuilt, skipping =="; continue
         fi
         # Per package, not once at the start. The run is long enough that the
@@ -1460,7 +1474,10 @@ rebuild() {
         # thirty-three packages is far too many to sit in front of, and one
         # silent build would hold the whole run.
         if watched "$WORK/stage$STAGE_N-log-$p.txt" stage2_build "$p"; then
-            echo "$p" >> "$STATE2"; ok=$((ok + 1)); echo "OK    $p"
+            # Une seule ligne par paquet : un rebatissage force ne doit pas
+            # doubler son nom, le registre etant compte autant que lu.
+            grep -qxF "$p" "$STATE2" 2>/dev/null || echo "$p" >> "$STATE2"
+            ok=$((ok + 1)); echo "OK    $p"
         else
             rc=$?
             fail=$((fail + 1)); failed+=("$p")
@@ -1648,6 +1665,8 @@ main() {
     if [ "$1" = "--all" ]; then
         rebuild "${STAGE2_FIRST[@]}" "${STAGE1_PACKAGES[@]}"
     else
+        REBUILD_FORCED=1
+        printf '== stage %s: rebuilding on request: %s ==\n' "$STAGE_N" "$*"
         rebuild "$@"
     fi
     # Après la passe, pas avant : ce qui vient d'être bâti est ce qu'il faut
