@@ -1079,8 +1079,14 @@ CHROOT_EXCLUDE=(
                         # build chroot needs neither.
 )
 
+# docbook-xsl ne peut PAS venir de repo1 : il y depend de libxslt, que
+# l'etage 1 ne sait pas batir, et make_rootfs refuse alors la transaction
+# entiere. Il ne peut pas non plus rester acquis d'une passe a l'autre --
+# le chroot est recree a chaque fois. Sa version d'etage 2 est donc
+# restauree ici, a cote du libxslt qui la rend installable, sans quoi la
+# documentation de postgresql s'arrete sur ses feuilles de style.
 CHROOT_STAGE2_PKGS=(
-    libxslt
+    libxslt docbook-xsl
     # The Python packaging set, for the same reason and a sharper one: their
     # package() computes install paths from the RUNNING python.
     #
