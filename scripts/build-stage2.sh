@@ -134,10 +134,16 @@ CHROOT_PKGS=(
     #   python-yaml  cloud-init, dont le ninja genere ses units avec, et
     #             s'arrete sur « No module named 'yaml' »
     #   python-requests  cloud-init encore, une fois yaml resolu
-    #   docbook-xml et docbook-xsl  postgresql, dont la documentation passe
-    #             par xmllint --nonet : sans le catalogue local, il tente
-    #             d'aller chercher la DTD en ligne et echoue sur un I/O
-    #             error, puis sur une cascade de « No declaration for »
+    #   docbook-xml  postgresql, dont la documentation passe par xmllint
+    #             --nonet : sans le catalogue local, il tente d'aller
+    #             chercher la DTD en ligne, echoue sur un I/O error, puis
+    #             deverse une cascade de « No declaration for » contre un
+    #             balisage valide. docbook-XSL, lui, n'a rien a faire ici :
+    #             il depend de libxslt, que repo1 n'a pas et n'aura jamais,
+    #             et make_rootfs s'arrete alors sur « cannot resolve
+    #             libxslt, a dependency of docbook-xsl ». Un nom present
+    #             dans repo1 ne suffit pas : ses dependances doivent y etre
+    #             aussi.
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -162,7 +168,7 @@ CHROOT_PKGS=(
     publicsuffix-list nspr zlib-ng libmd cpio llvm bc
     python-tomlkit python-pathspec python-pluggy python-trove-classifiers
     liburing numactl elfutils nlohmann-json cppdap bash-completion
-    perl-ipc-run perl-io-tty python-yaml python-requests docbook-xml docbook-xsl
+    perl-ipc-run perl-io-tty python-yaml python-requests docbook-xml
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #

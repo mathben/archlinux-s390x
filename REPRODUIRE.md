@@ -117,6 +117,25 @@ Peuple un chroot depuis l'étage 1 puis rebâtit tout avec la chaîne ainsi
 obtenue. Sortie dans `repo2/s390x`. Se termine par une épreuve RESOLVE qui
 demande à pacman si le dépôt entier s'installe d'un bloc.
 
+### Avant de toucher à `CHROOT_PKGS` : l'ensemble doit RÉSOUDRE
+
+Le chroot se peuple depuis repo1. Qu'un nom y existe ne suffit pas — ses
+dépendances doivent y être aussi, sinon `make_rootfs` s'arrête et l'étage 2
+ne démarre pas du tout :
+
+```
+warning: cannot resolve "libxslt", a dependency of "docbook-xsl"
+stage2: populate failed
+```
+
+`libxslt` est un des paquets que l'étage 1 ne peut PAS bâtir. Ajouter
+`docbook-xsl`, qui en dépend, suffit à tout bloquer. Le contrôle se fait avant,
+sur l'ensemble entier, avec la configuration pacman de la section 4 bis :
+
+```bash
+sudo pacman --config /tmp/r.conf --dbpath /tmp/r.db -Sp <tous les noms>
+```
+
 ### UNE PASSE NE SUFFIT PAS, et ce n'est pas un défaut
 
 Le chroot s'enrichit à mesure que la liste avance : un paquet bâti y est
