@@ -960,13 +960,29 @@ NOTE
 #   binutils meurt la, gcc derriere lui, et git se met a se plaindre -- ce
 #   qui emporte toute recette dont prepare() clone quoi que ce soit. Un seul
 #   paquet mal place, et la moitie de la liste tombe.
-STAGE2_FIRST=(zlib texinfo libxml2 binutils pkgconf wget libxslt
+#   pacman -- juste apres zlib. Celui de l'etage 1 est lie au gpgme de
+#   l'hote et ne demarre pas ici : « libgpgme.so.11: cannot open shared
+#   object file », quand le chroot porte notre .so.45. makepkg l'appelle
+#   apres avoir bati, si bien que la roue est faite et le paquet perdu --
+#   quatre recettes ont fini ainsi, toutes avec un build reussi.
+#
+#   L'ORDRE DE CETTE LISTE EST UN ORDRE DE DEPENDANCES, pas une enumeration.
+#   Un paquet qui en bâtit un autre vient avant lui :
+#
+#     python-fastjsonschema  -> poetry.core valide pyproject.toml avec lui
+#     python-poetry-core     -> backend de python-pkgconfig
+#     python-vcs-versioning  -> setuptools-scm l'IMPORTE en se bâtissant
+#
+#   Chacune de ces trois a ete vue a l'oeuvre : un consommateur place avant
+#   son fournisseur echoue, puis passe au tour suivant. Ce qui marche par
+#   accident de relance doit marcher du premier coup.
+STAGE2_FIRST=(zlib pacman texinfo libxml2 binutils pkgconf wget libxslt
               python-packaging python-pyproject-hooks python-build
               python-installer python-setuptools python-wheel
-              python-setuptools-scm python-markupsafe python-jinja
-              python-pkgconfig cython python-poetry-core
-              python-vcs-versioning python-fastjsonschema gyp
-              python-psutil)
+              python-fastjsonschema python-poetry-core
+              python-vcs-versioning python-setuptools-scm
+              python-markupsafe python-jinja python-pkgconfig
+              cython gyp python-psutil)
 
 # Packages the chroot needs that can only come from repo2.
 #
