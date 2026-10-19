@@ -105,6 +105,20 @@ CHROOT_PKGS=(
     #   libsodium openldap, dont le configure cherche sodium.h et s'arrete
     #             sur « --enable_argon2=yes requires --with-argon2 »
     #   unixodbc  openldap encore, qui le declare en makedepends
+    #   publicsuffix-list  libpsl, dont le Makefile attend
+    #             /usr/share/publicsuffix/effective_tld_names.dat
+    #   nspr      nss, sur prtypes.h
+    #   zlib-ng   git, sur zlib-ng.h -- le paquet nu, pas zlib-ng-compat,
+    #             qui lui entre en conflit avec zlib et reste exclu
+    #   libmd     libbsd, « cannot find required MD5 functions »
+    #   cpio      debugedit, « cpio needed by find-debuginfo »
+    #   llvm      postgresql, qui cherche llvm-config pour son JIT
+    #   bc        linux, que son Makefile appelle
+    #   python-tomlkit, python-pathspec, python-pluggy et
+    #   python-trove-classifiers  python-hatchling les reclame tous les
+    #             quatre, et huit paquets se batissent avec hatchling :
+    #             sans eux la grappe entiere tombe sur « Cannot import
+    #             'hatchling.build' », qui ne nomme aucun des quatre.
     #
     # tcl dit aussi pourquoi cette liste existe plutot que de compter sur ce
     # qui a deja ete bati. Il EST construit par l'etage 2, et il avait bien
@@ -126,6 +140,8 @@ CHROOT_PKGS=(
     # STAGE2_FIRST instead. Listing it here would fail make_rootfs with "target
     # not found" against a repository that will never contain it.
     gperf wget patchelf inetutils swig help2man tcl libsodium unixodbc
+    publicsuffix-list nspr zlib-ng libmd cpio llvm bc
+    python-tomlkit python-pathspec python-pluggy python-trove-classifiers
     # scdoc: kmod's meson asks for it by name.
     scdoc
     #
