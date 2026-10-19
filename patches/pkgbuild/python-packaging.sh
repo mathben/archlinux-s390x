@@ -40,7 +40,14 @@ lines[hit[0]:hit[0] + 1] = [
     ind + '# The sources are a git clone under $pkgname when the vendored builder',
     ind + '# is used, and the release tarball otherwise. Take whichever exists.',
     ind + 'for _lic in "$srcdir/$pkgname"/LICENSE* "$srcdir/$_name-$pkgver"/LICENSE*; do',
-    ind + '  [ -f "$_lic" ] && install -vDm644 "$_lic" -t "$pkgdir/usr/share/licenses/$pkgname"',
+    ind + '  # `|| continue`, et non `&& install` : ce que rend package() est le',
+    ind + '  # statut de sa derniere commande, donc de la boucle, donc de sa',
+    ind + '  # derniere iteration. Le second motif ne correspond a rien sur la',
+    ind + '  # branche du batisseur : le test echoue, et makepkg lit un package()',
+    ind + '  # en echec sans une ligne derreur a montrer. Avec || continue, la',
+    ind + '  # boucle finit sur un continue ou un install, nuls tous les deux.',
+    ind + '  [ -f "$_lic" ] || continue',
+    ind + '  install -vDm644 "$_lic" -t "$pkgdir/usr/share/licenses/$pkgname"',
     ind + 'done',
 ]
 io.open("PKGBUILD", "w", encoding="utf-8").write("\n".join(lines))
@@ -53,4 +60,8 @@ grep -q 'Take whichever exists' PKGBUILD || {
 # did exactly that and failed on a correct file.
 grep -q '_name-\$pkgver"/LICENSE\*' PKGBUILD || {
     echo "python-packaging: the tarball layout was dropped" >&2; exit 1; }
+# La boucle doit finir sur un statut nul, sans quoi package() echoue en
+# silence. Le controle porte sur la forme ecrite, seule a le garantir.
+grep -q '\[ -f "\$_lic" \] || continue' PKGBUILD || {
+    echo "python-packaging: la boucle peut rendre un statut non nul" >&2; exit 1; }
 echo "python-packaging: license taken from the bootstrap clone"
