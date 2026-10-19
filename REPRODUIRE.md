@@ -192,6 +192,31 @@ lecteur ne peut pas distinguer une régression de l'état normal.
 l'étage 2, la MÊME commande doit être propre. C'est la comparaison qui prouve
 quelque chose, pas le relevé isolé.
 
+### D'ABORD : le dépôt comparé est-il bien celui de cette exécution ?
+
+`repo2/s390x` peut mélanger deux choses — les paquets que l'exécution en cours
+a bâtis, et ceux qu'une exécution antérieure y a laissés ou qu'une restauration
+y a remis. Comparer les deux sans le savoir, c'est mesurer un étage 2 qui
+n'existe pas.
+
+Le registre tranche : un paquet compte pour cette exécution si son `pkgbase`
+est dans `stage2.state`.
+
+```bash
+W=~/work/arch-s390x; tot=0; frais=0
+for f in $W/repo2/s390x/*.pkg.tar.zst; do
+    case "$f" in *.sig) continue;; esac
+    tot=$((tot + 1))
+    pb=$(bsdtar -xOf "$f" .PKGINFO | sed -n 's/^pkgbase = //p')
+    pn=$(bsdtar -xOf "$f" .PKGINFO | sed -n 's/^pkgname = //p')
+    grep -qxF "${pb:-$pn}" $W/stage2.state && frais=$((frais + 1))
+done
+echo "$frais de $tot bâtis par cette exécution"
+```
+
+Tant que les deux nombres diffèrent, l'étage 2 n'est pas fini : relancer.
+Un verdict rendu sur un dépôt mélangé ne dit rien.
+
 ### Lire `compare-stages.sh` : ce que l'étage 2 répare, chiffré
 
 La comparaison ne rend pas un verdict binaire utile tant que l'étage 2 n'a pas
