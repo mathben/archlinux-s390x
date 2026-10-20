@@ -181,6 +181,34 @@ bash scripts/compare-stages.sh     # un étage en reproduit-il un autre ?
 bash scripts/sign-repo.sh          # signer, une fois le dépôt stable
 ```
 
+### L'étage 3, et ce que « auto-hébergé » veut dire ici
+
+```bash
+STAGE_N=3 PKG_GIT_BASE="file://$HOME/work/arch-s390x/recettes-arch-s390x" \
+    EL_NOCHECK=1 bash scripts/build-stage2.sh --all
+```
+
+Même script, un chiffre de plus : le chroot se peuple depuis **repo2 seul**.
+Le premier signe que l'étage 2 a réussi est que ce peuplement ne se replie
+PAS sur `CHROOT_PKGS` — les 283 paquets s'installent d'un bloc.
+
+Résultat : 228 sur 229, et les quatre épreuves propres sur repo3.
+
+**La comparaison avec l'étage 2 ne rend pas « identique », et c'est normal.**
+267 contenus identiques, 13 différents — mais 110 lignes ajoutées contre 33
+retirées. L'étage 3 produit PLUS, parce que son chroot est plus riche :
+`gnupg` y gagne `dirmngr_ldap`, `coreutils` son `stdbuf`, `p11-kit` et
+`util-linux` leurs complétions. Et les retraits sont le piège du bâtisseur
+embarqué : l'étage 2 livrait `build-1.3.0` et `installer-0.7.0`, ses copies
+vendues ; l'étage 3 livre `1.4.3` et `1.0.0`, les vraies.
+
+Deux écarts ne sont pas des écarts : `meson` et `setuptools` portent la DATE
+de construction dans leur numéro de version.
+
+**Ce qui prouverait l'auto-hébergement complet est un étage 4 identique à
+l'étage 3.** L'étage 3 démontre déjà l'essentiel : la chaîne se régénère
+sans rien emprunter à l'hôte.
+
 ### Ce que l'étage 2 donne quand il est fini
 
 ```
