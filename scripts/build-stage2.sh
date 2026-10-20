@@ -475,6 +475,31 @@ configure_chroot() {
     sudo sed -i 's|^CARCH=.*|CARCH="s390x"|; s|^CHOST=.*|CHOST="s390x-ibm-linux-gnu"|' \
         "$ROOT/etc/makepkg.conf"
     sudo sed -i "s|^#\?MAKEFLAGS=.*|MAKEFLAGS=\"-j$(nproc)\"|" "$ROOT/etc/makepkg.conf"
+    # UN LIEN QUI SORT DE site-packages EMPECHE DE REBATIR CE QUI L'A POSE.
+    #
+    # python-certifi remplace son magasin de certificats par un lien vers celui
+    # du systeme -- c'est la recette d'amont qui le veut, pour que le paquet
+    # suive les decisions de confiance de l'hote. Une fois ce paquet INSTALLE
+    # dans le chroot, `python -m installer` refuse d'y reinstaller certifi :
+    #
+    #   ValueError: Attempting to write certifi/cacert.pem outside of the
+    #   target directory
+    #
+    # Son controle resout le chemin sur le systeme de fichiers REEL avant
+    # d'appliquer --destdir, suit donc le lien jusqu'a /etc/ssl et constate
+    # qu'il est hors de site-packages. Arch n'y est jamais confronte : il
+    # bâtit dans un chroot ou certifi n'est pas installe. Ici il l'est, parce
+    # que python-requests en depend et que cloud-init a besoin de requests.
+    #
+    # Le defaut est donc dans NOTRE chroot, pas dans le paquet : le lien y est
+    # remplace par une copie de ce qu'il designe. Le paquet produit garde son
+    # lien, rien de ce qui est livre ne change.
+    for _c in "$ROOT"/usr/lib/python3.*/site-packages/certifi/cacert.pem; do
+        [ -L "$_c" ] || continue
+        sudo cp --remove-destination "$(readlink -f "$_c")" "$_c" 2>/dev/null \
+            && printf '  certifi: lien vers le magasin systeme remplace par une copie\n'
+    done
+    unset _c
     # SOURCES KEPT, BECAUSE UPSTREAMS GO AWAY.
     #
     # makepkg downloads into the recipe directory and the chroot is torn down
