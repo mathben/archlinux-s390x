@@ -242,6 +242,23 @@ lecteur ne peut pas distinguer une régression de l'état normal.
 l'étage 2, la MÊME commande doit être propre. C'est la comparaison qui prouve
 quelque chose, pas le relevé isolé.
 
+### Un registre d'étage survit à la machine qui l'a écrit
+
+`stageN.state` et `repoN` se restaurent avec le reste d'une sauvegarde, et
+rien ne dit de quelle exécution ils viennent. Un nom qui s'y trouve est sauté,
+donc jamais rebâti — et la comparaison porte alors sur un artefact d'une
+autre machine sans que rien ne le signale.
+
+Vu sur un étage 3 : cinq paquets dataient de trois jours plus tôt, d'une
+tentative sur la machine précédente. Les dates le disent en une commande :
+
+```bash
+ls -l --time-style=+%m-%d_%H:%M ~/work/arch-s390x/repo3/s390x/*.pkg.tar.zst
+```
+
+Un étage qu'on veut PROUVER se recommence à neuf : déplacer `repoN` et
+`stageN.state` ailleurs — les déplacer, pas les effacer — et relancer.
+
 ### D'ABORD : le dépôt comparé est-il bien celui de cette exécution ?
 
 `repo2/s390x` peut mélanger deux choses — les paquets que l'exécution en cours
