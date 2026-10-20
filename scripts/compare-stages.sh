@@ -44,31 +44,52 @@ say() { printf '  %s\n' "$*"; }
 # c'est la façon de compresser, pas ce que le paquet contient.
 _PKGGLOB='*.pkg.tar.*'
 
-_names() {  # <repo> -> "name version" par ligne
-    local f
+# UNE SEULE VERSION PAR PAQUET, LA PLUS RECENTE.
+#
+# repo-add tient la base a jour, mais le FICHIER de l'ancienne version reste
+# sur le disque : un paquet rebati a un pkgver different laisse deux archives
+# cote a cote. Les ramasser toutes fait apparaitre un ecart de VERSION entre
+# les deux etages la ou il n'y a qu'un vieux fichier -- « compiler-rt: 22.1.8
+# -> 23.1.1 » alors que les deux depots portent bien 23.1.1. Le verdict se
+# lit alors comme un resultat, et n'en est pas un.
+_newest() {  # <repo> -> le fichier le plus recent par paquet, un par ligne
+    local f base rest name
     for f in "$1"/$_PKGGLOB; do
         [ -e "$f" ] || continue
-        f="${f##*/}"
         case "$f" in *.sig) continue ;; esac
-        # nom-version-release-arch.pkg.tar.<ext> ; le nom peut porter des tirets.
-        local rest="${f%.pkg.tar.*}"              # ... nom-version-release-arch
-        rest="${rest%-*}"                         # ... nom-version-release
-        local rel="${rest##*-}" ; rest="${rest%-*}"
-        local ver="${rest##*-}" ; local name="${rest%-*}"
-        printf '%s %s-%s\n' "$name" "$ver" "$rel"
-    done | sort
+        base="${f##*/}"
+        rest="${base%.pkg.tar.*}"; rest="${rest%-*}"
+        rest="${rest%-*}"; name="${rest%-*}"
+        printf '%s\t%s\t%s\n' "$name" "$(stat -c %Y "$f")" "$f"
+    done | sort -t$'\t' -k1,1 -k2,2nr | awk -F'\t' '!seen[$1]++ { print $3 }'
 }
 
-# <repo> <nom> -> le fichier du paquet, quelle que soit sa compression.
+_names() {  # <repo> -> "name version" par ligne, une seule par paquet
+    local f base rest rel ver name
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        base="${f##*/}"
+        rest="${base%.pkg.tar.*}"              # ... nom-version-release-arch
+        rest="${rest%-*}"                      # ... nom-version-release
+        rel="${rest##*-}" ; rest="${rest%-*}"
+        ver="${rest##*-}" ; name="${rest%-*}"
+        printf '%s %s-%s\n' "$name" "$ver" "$rel"
+    done < <(_newest "$1") | sort
+}
+
+# <repo> <nom> -> le fichier du paquet, quelle que soit sa compression, et le
+# PLUS RECENT s'il y en a plusieurs -- meme raison que _newest ci-dessus : une
+# ancienne archive laissee sur le disque ferait comparer la mauvaise.
 _pkgfile() {
-    local f
+    local f best="" bt=0 t
     for f in "$1/$2"-[0-9]*.pkg.tar.*; do
         [ -e "$f" ] || continue
         case "$f" in *.sig) continue ;; esac
-        printf '%s\n' "$f"
-        return 0
+        t=$(stat -c %Y "$f")
+        if [ -z "$best" ] || [ "$t" -gt "$bt" ]; then best="$f"; bt="$t"; fi
     done
-    return 1
+    [ -n "$best" ] || return 1
+    printf '%s\n' "$best"
 }
 
 # bsdtar plutot que `tar --use-compress-program=unzstd` : il reconnait la
