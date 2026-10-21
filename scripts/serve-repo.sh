@@ -48,7 +48,7 @@ case "${1:-status}" in
         # here would be one more thing to configure on a shared host.
         sudo tee "$SERVICE" >/dev/null <<UNITFILE
 [Unit]
-Description=Arch s390x stage-2 package repository
+Description=Arch s390x package repository ($(basename "$REPO2"))
 After=network-online.target libvirtd.service
 Wants=network-online.target
 

@@ -44,6 +44,11 @@ HOSTNAME_="${HOSTNAME_:-arch-s390x}"
 # Optional, and deliberately without defaults -- see the header.
 EL_SSH_PUBKEY="${EL_SSH_PUBKEY:-}"
 EL_ROOT_PASSWORD="${EL_ROOT_PASSWORD:-}"
+# Une autorite de certification a ajouter aux 121 de Mozilla. Un reseau qui
+# interpose un cache TLS signe lui-meme ce que le client recoit : sans son
+# autorite, toute requete https echoue sur « self-signed certificate in
+# certificate chain », alors que le DNS resout et que le http simple passe.
+EL_EXTRA_CA="${EL_EXTRA_CA:-}"
 EL_REPO_SERVER="${EL_REPO_SERVER:-}"
 # cloud-init: absent by default. An image that carries it behaves like every
 # other cloud image -- a deployment hands it a cidata seed and it applies
@@ -199,6 +204,16 @@ done
 sudo chroot "$MNT" /usr/bin/systemd-sysusers >/dev/null
 sudo chroot "$MNT" /usr/bin/systemd-tmpfiles --create >/dev/null 2>&1 || true
 say "system users: $(sudo grep -cE '^(alpm|postgres|nobody):' "$MNT/etc/passwd") of alpm, postgres, nobody"
+
+# L'autorite supplementaire s'ajoute AVANT l'assemblage, qui ne lit les ancres
+# qu'une fois : posee apres, elle ne serait dans aucun paquet.
+if [ -n "$EL_EXTRA_CA" ]; then
+    [ -f "$EL_EXTRA_CA" ] || die "no CA certificate at $EL_EXTRA_CA"
+    sudo install -d -m 0755 "$MNT/etc/ca-certificates/trust-source/anchors"
+    sudo install -m 0644 "$EL_EXTRA_CA" \
+        "$MNT/etc/ca-certificates/trust-source/anchors/$(basename "$EL_EXTRA_CA")"
+    say "extra CA anchored: $(basename "$EL_EXTRA_CA")"
+fi
 
 # The CA bundle: 121 certificates that exist as files and are not assembled
 # until something says so. Without this the image cannot speak TLS at all.
