@@ -611,7 +611,13 @@ STAGE1_PACKAGES=(
     # La grappe geospatiale : shapely se lie a geos, pyproj a proj, et proj a
     # libtiff, qui demande lui-meme jbigkit, libdeflate et libwebp. Les deux
     # modules Python sont des dependances declarees d'ERPLibre.
-    geos jbigkit libdeflate libwebp libtiff proj
+    geos jbigkit libdeflate libwebp libtiff proj giflib libpng
+    # La grappe d'impression. pycups est importe par le module OCA
+    # base_report_to_printer ET par odoo/addons/hw_drivers, les pilotes
+    # d'imprimante d'Odoo lui-meme. avahi est une dependance DURE de libcups :
+    # sans lui, dest.c reference des champs de struct que son propre #ifdef
+    # n'a pas definis, et la compilation s'arrete.
+    libdaemon glib2 avahi libpaper cups
 )
 
 # Packages a stage-1 run is EXPECTED to report as failed.
