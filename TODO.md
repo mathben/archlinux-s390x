@@ -213,6 +213,91 @@ target grows a graphics stack.
 
 ---
 
+### No documentation toolchain — `glib2.sh`, `giflib.sh`, `avahi.sh`
+
+Three packages stop on a tool that only ever produces documentation, after
+their code has compiled without a fault:
+
+| package | tool | what the hook does |
+|---------|------|--------------------|
+| `glib2` | `rst2man`, from `python-docutils` | `-D man-pages=disabled -D documentation=false` |
+| `giflib` | `xmlto`, `docbook-xsl`, `imagemagick` | builds `libgif.so libgif.a`, installs `install-lib install-include` |
+| `avahi` | `xmltoman` | `--disable-manpages` |
+
+A port that starts from nothing has no documentation chain, and Arch's
+recipes assume one because on an installed Arch it is always there. The
+failure always lands at packaging, never at compilation.
+
+Disabling an option also leaves holes in the split-package layout: `_pick`
+moves paths into subpackages and stops on one that is absent. Both `glib2`
+and `avahi` use that idiom, and both hooks make `_pick` skip a missing path
+rather than name the files one by one — a list would rot at the next
+upstream change.
+
+**To close:** build `python-docutils` (it needs `docutils` first), `xmlto`
+and `xmltoman`, then drop the options one package at a time. Each is
+independent of the others.
+
+### `glib2` introspection and sysprof — `patches/pkgbuild/glib2.sh`
+
+`introspection` wants `g-ir-scanner`, from `gobject-introspection`, which is
+built **against glib2**. Neither can be first while the option is required;
+Arch resolves it with an intermediate glib2, the port by going without the
+`.gir` files. What is lost is the introspectable description of GLib, which
+`python-gobject` and dynamic bindings read.
+
+`sysprof` wants `libsysprof-capture`, which Arch does not publish under that
+name — the clone meets a credentials prompt, meaning the repository is not
+there. Disabling the meson option is not enough: the name stays in
+`depends`, and pacman then refuses to install glib2 and everything above it.
+The hook removes both.
+
+**To close:** build a bootstrap glib2 without introspection, then
+`gobject-introspection` against it, then glib2 again with the option on.
+
+### `avahi` without GTK or Python — `patches/pkgbuild/avahi.sh`
+
+`configure` stops on `gtk+-3.0`, then on Python GObject. The recipe disables
+mono and qt5 but not these, because it produces `avahi-gtk`
+(`avahi-discover`, `bshell`, `bssh`, `bvnc`) and `avahi-bookmarks`, a Python
+service. On a machine with no display neither has an employ, and GTK3 would
+bring a whole stack into the port. Both subpackages leave `pkgname`, or
+makepkg would demand packages nothing produces.
+
+What remains is what `libcups` needs: the daemon, `libavahi-client`, and the
+`libdns_sd` compatibility that `--enable-compat-libdns_sd` provides. The
+hook checks that last one is still on, because its absence is what made
+`cups/dest.c` reference struct fields its own `#ifdef` had not defined.
+
+**To close:** GTK3 in the port, then drop `--disable-gtk3` and restore
+`avahi-gtk`. The Python bindings need `python-gobject`, hence introspection,
+hence the glib2 entry above.
+
+### The CUPS server — `patches/pkgbuild/cups.sh`
+
+The recipe produces `libcups` and `cups`; only the library is kept. `pycups`
+compiles against `cups/http.h` and links `libcups`, and that is all Odoo's
+printer drivers and the OCA module `base_report_to_printer` need: they speak
+IPP to a print server, local or remote. The `cups` package declares
+`cups-filters`, which declares `libppd` and `libcupsfilters`, which pull
+poppler, qpdf and ghostscript.
+
+Without the removal the repository does not RESOLVE: `unable to satisfy
+dependency cups-filters required by cups`.
+
+**To close:** build `libppd`, `libcupsfilters` and `cups-filters`, then
+restore `cups` to `pkgname`.
+
+### `onetbb` without its Python module — `patches/pkgbuild/onetbb.sh`
+
+`TBB4PY` builds the `tbb` Python module by calling pip, which the port has
+no path to: pip needs `docutils`, which needs more. The C++ core builds with
+no fault — its test target compiles and links before `python_build` fails —
+and that core is all `manifold3d` needs, which finds tbb through pkg-config.
+
+**To close:** the same `python-docutils` as the documentation entry, then
+`python-pip`, then `-DTBB4PY_BUILD=ON` again.
+
 ## Architectural
 
 ### The baseline CPU is z13 — decided, not inherited
