@@ -205,9 +205,75 @@ vendues ; l'étage 3 livre `1.4.3` et `1.0.0`, les vraies.
 Deux écarts ne sont pas des écarts : `meson` et `setuptools` portent la DATE
 de construction dans leur numéro de version.
 
-**Ce qui prouverait l'auto-hébergement complet est un étage 4 identique à
-l'étage 3.** L'étage 3 démontre déjà l'essentiel : la chaîne se régénère
-sans rien emprunter à l'hôte.
+**Ce qui prouve l'auto-hébergement complet est un étage 4 identique à
+l'étage 3**, et la section suivante le donne. L'étage 3 démontre déjà
+l'essentiel : la chaîne se régénère sans rien emprunter à l'hôte.
+
+### L'étage 4, et la preuve que la chaîne a convergé
+
+```bash
+STAGE_N=4 PKG_GIT_BASE="file://$HOME/work/arch-s390x/recettes-arch-s390x" \
+    EL_NOCHECK=1 bash scripts/build-stage2.sh --all
+```
+
+Le chroot se peuple depuis **repo3 seul** : 278 paquets d'un bloc, sans
+repli sur `CHROOT_PKGS`. Résultat identique à l'étage 3 — 228 sur 229, le
+manquant étant `libaio`, dont la source est retirée en amont — et les quatre
+épreuves propres sur repo4.
+
+La comparaison avec l'étage 3 donne **279 contenus identiques sur 280, toutes
+les versions égales**. Le seul écart est `meson`, dont le numéro de version
+de développement porte la date de construction : `d20261020` contre
+`d20261021`. Ce n'est pas un défaut d'auto-hébergement, c'est un horodatage.
+
+**La chaîne est donc auto-hébergée** : un étage bâti depuis le précédent
+reproduit le précédent.
+
+### Une différence qui OSCILLE se reconnaît à ceci : elle change de camp
+
+L'écart le plus instructif de cette comparaison a d'abord ressemblé à du
+bruit. Le `ninja` d'un étage portait 47 fichiers de plus que celui du
+suivant : en-têtes `gmock` et `gtest`, bibliothèques, fichiers cmake.
+
+`ninja` déclare `gtest` en `makedepends`. Comme `makepkg` tourne avec
+`--nodeps`, rien ne l'installe, et le port ne bâtit pas ce paquet : cmake ne
+trouve pas GTest, le télécharge par `FetchContent`, le bâtit, et
+`cmake --install` le dépose dans le paquet avec le reste.
+
+Le piège est dans la suite. Un `ninja` ainsi contaminé, installé dans le
+chroot de l'étage suivant, y fournit `/usr/lib/cmake/GTest/GTestConfig.cmake`.
+Cmake le trouve alors, ne vendorise rien, et l'étage produit un `ninja`
+propre — qui prive l'étage d'après de GTest, qui contamine à nouveau. **Deux
+étages consécutifs ne peuvent jamais être identiques tant que la sortie d'un
+paquet dépend de ce qui se trouve dans le chroot.** Comparer un étage de plus
+ne résout rien : l'écart change de camp, il ne disparaît pas.
+
+Les deux journaux de construction le disent en une ligne chacun, et c'est là
+qu'il faut regarder avant de conclure au bruit :
+
+```
+-- Could NOT find GTest (missing: GTEST_LIBRARY ...)     puis _deps/googletest-build
+-- Found GTest: /usr/lib/cmake/GTest/GTestConfig.cmake (found version "1.16.0")
+```
+
+Le correctif est dans `patches/pkgbuild/ninja.sh` : il retire googletest de
+`$pkgdir` en fin de `package()`. L'épreuve qui le valide n'est pas que le
+paquet soit propre, mais qu'il le soit **dans le chroot où cmake vendorise
+quand même** — sinon on mesure l'absence de la cause, pas l'effet du
+correctif.
+
+Un retrait laisse des répertoires vides, et un répertoire vide est lui-même
+une différence entre deux étages : la première version du correctif a laissé
+`usr/lib/pkgconfig/` derrière elle, et la comparaison l'a vu.
+
+### Ne pas prendre la liste des horodatages pour acquise
+
+Entre l'étage 2 et l'étage 3, `meson` ET `setuptools` différaient par leur
+date. Entre l'étage 3 et l'étage 4, `setuptools` est identique et seul
+`meson` diffère. Un paquet qui porte une date dans sa version ne diffère que
+si les deux étages tombent de part et d'autre de minuit. « C'est juste la
+date » est une conclusion à tirer du diff, jamais une hypothèse à poser
+avant de le lire.
 
 ### Ce que l'étage 2 donne quand il est fini
 
