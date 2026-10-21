@@ -575,6 +575,43 @@ STAGE1_PACKAGES=(
     # patches/pkgbuild/linux.sh generates an s390x config from the in-tree
     # defconfig and verifies sixteen symbols before the build proceeds.
     linux
+    # Ce qu'exige l'installateur Arch d'ERPLibre, et dont l'absence le fait
+    # sortir en erreur plutot que continuer en best-effort :
+    #   less    le paginateur. git l'appelle pour log, diff, show et tag, et
+    #           s'arrete sur « unable to execute pager » sans lui. pacman ne
+    #           le tire pas : git ne le declare qu'en dependance optionnelle.
+    #   nodejs  rtlcss et lessc, les preprocesseurs des feuilles de style
+    #   npm     d'Odoo, tournent dessus. Son package() appelle jq, qui se lie
+    #           a oniguruma.
+    # « tk » n'est PAS ici : il ne donne a CPython que tkinter, qu'ERPLibre
+    # importe derriere un except ModuleNotFoundError, et il tire la pile X11
+    # entiere sur une machine sans ecran.
+    # gtest : abseil-cpp le cherche en configuration et s'arrete sans lui, et
+    # ninja le vendorise quand il ne le trouve pas. Le fournir une fois rend
+    # les deux deterministes -- voir patches/pkgbuild/ninja.sh.
+    gtest
+    # abseil-cpp, ada, c-ares, libnghttp3, libngtcp2 et simdjson : les six
+    # bibliotheques que nodejs attend du systeme et que le port n'avait pas.
+    abseil-cpp ada c-ares libnghttp3 libngtcp2 simdjson
+    less oniguruma jq nodejs npm
+    # Ce que npm declare en dependances et que pacman refuse de resoudre sans :
+    # node-gyp compile les extensions natives, nopt lit ses options, semver
+    # compare les versions.
+    semver nodejs-nopt node-gyp
+    # onetbb : manifold3d refuse de configurer sans lui (« Parallel mode
+    # enabled, but tbb was not found »). manifold3d vient de pythonopenscad,
+    # lui-meme tire par to-3mf, que le module PLM de conversion CAO importe.
+    # python-pip : la construction des liaisons Python d'onetbb l'appelle, et
+    # s'arrete sur « No module named pip ». Le fournir garde le PKGBUILD
+    # d'onetbb identique a celui d'Arch, la ou desactiver TBB4PY creerait une
+    # divergence a porter.
+    # libpciaccess et hwloc : onetbb declare hwloc, qui se lie a libpciaccess
+    # pour enumerer la topologie materielle.
+    libpciaccess hwloc onetbb
+    # La grappe geospatiale : shapely se lie a geos, pyproj a proj, et proj a
+    # libtiff, qui demande lui-meme jbigkit, libdeflate et libwebp. Les deux
+    # modules Python sont des dependances declarees d'ERPLibre.
+    geos jbigkit libdeflate libwebp libtiff proj
 )
 
 # Packages a stage-1 run is EXPECTED to report as failed.
