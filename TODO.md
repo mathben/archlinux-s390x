@@ -1077,5 +1077,10 @@ through libjpeg-turbo, pikepdf through qpdf.
   build time. Measured on an image built from nothing: boots in 3.5 s,
   `is-system-running` reports running with no failed unit, DNS resolves and
   pypi answers 200.
-- **Stage 3.** Self-hosting still means rebuilding stage 2 with its own output
-  until the result reproduces itself.
+- ~~**Stage 3.**~~ **Reproduced, and measured.** Stage 3 builds from repo2
+  alone and stage 4 from repo3 alone, 228 of 229 each -- the one absence being
+  libaio, whose source is withdrawn upstream. Stage 4 against stage 3: 280
+  packages both sides, every version equal, 279 identical contents of 280. The
+  single difference is meson's build date inside its dev version string. A
+  stage built from the previous one reproduces the previous one, which is what
+  self-hosting means. `REPRODUIRE.md` carries the commands and the traps.
