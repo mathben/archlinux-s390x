@@ -298,6 +298,64 @@ and that core is all `manifold3d` needs, which finds tbb through pkg-config.
 **To close:** the same `python-docutils` as the documentation entry, then
 `python-pip`, then `-DTBB4PY_BUILD=ON` again.
 
+### `vim` without Tcl and without gvim — `patches/pkgbuild/vim.sh`
+
+Two things the recipe assumes a workstation has.
+
+`src/if_tcl.c` declares its prototypes with `_ANSI_ARGS_`, a macro Tcl 8
+defined in tcl.h and Tcl 9 removed; the compiler stops on "expected '=', ',',
+';', 'asm' or '__attribute__' before '_ANSI_ARGS_'", once per prototype. The
+port carries Tcl 9.0.1 because that is what Arch distributes. Nothing here is
+s390x-specific: any vim 9.x built against Tcl 9 meets it.
+
+The gvim variant then wants `--with-x=yes --enable-gui=gtk3`, and configure
+stops on "could not configure X". It leaves pkgname with its package_
+function, or makepkg would demand a package nothing produces.
+
+What is lost: `:tcl` and plugins written in Tcl, and the graphical editor.
+The Python, Perl, Lua and Ruby interfaces are untouched.
+
+**To close:** GTK3 and an X11 stack in the port bring gvim back. Tcl needs
+upstream to carry if_tcl.c to Tcl 9, or a patch here.
+
+### `iproute2` without xtables or BPF — `patches/pkgbuild/iproute2.sh`
+
+It declares `libxtables.so`, from iptables, and `libbpf` — and iptables
+alone pulls six netfilter packages for a filtering mode a server never asks
+for. Its configure does not require them: the recipe calls it with
+`--color auto` and nothing else, and it detects both then goes without.
+
+Only the declaration blocked, as `libsysprof-capture` did for glib2: the
+package builds, and pacman then refuses to install it. `ip`, `ss` and
+`bridge` are whole; what is lost is `tc` filtering through xtables and
+loading BPF programs.
+
+**To close:** build iptables with its six, and libbpf, then restore the
+three names to depends.
+
+### wkhtmltopdf — ABANDONED, not deferred
+
+Odoo says so at every start: "You need Wkhtmltopdf to print a pdf version of
+the reports." PDF reports do not work on this port, and that is a decision,
+not an oversight.
+
+Arch publishes it only through the AUR, in two recipes. One repackages
+upstream's static binaries, which exist for x86_64 and aarch64 and not for
+this architecture. The other builds from source against Qt5 WebKit, and its
+own optdepends warns that "wkhtmltopdf needs X or Xvfb to operate".
+
+MEASURED before deciding: the transitive closure of that source build is at
+least forty packages absent from the port — qt5-base, qt5-webkit, mesa,
+libinput, libwacom, lua54, duktape and the whole X11 stack — and the walk
+that counted them was capped, so the real figure is higher. qt5-webkit is
+abandoned upstream and is among the heaviest builds in any distribution.
+
+Porting a graphical environment for one output format is not a trade this
+port makes. An external renderer answers the same need without any of it.
+
+**To reopen:** a wkhtmltopdf that does not need WebKit, or a port that has
+Qt5 and X11 for other reasons.
+
 ## Architectural
 
 ### The baseline CPU is z13 — decided, not inherited
