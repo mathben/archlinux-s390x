@@ -471,6 +471,10 @@ ERPLibre instead of imitating it. If it ever needs to be paid once rather
 than per machine, the way back is a script that drives `make
 install_production` in a booted guest -- not a reimplementation of it.
 
+The procedure -- build the image, publish it with its checksum, make it
+appear in the deployment menu, and what each trap looks like on screen --
+is `REPRODUIRE.md` section 5.
+
 ### The image was built by hand — `scripts/build-image.sh`
 
 An image nobody can rebuild is an image that exists once. The first one was a

@@ -1,4 +1,4 @@
-# Refaire les étages 1 et 2, à la main
+# Refaire le portage, de l'étage 1 à la VM déployée, à la main
 
 Ce document est une PROCÉDURE, pas une description. Chaque commande y figure
 telle qu'elle a été lancée, et chaque vérification telle qu'elle a répondu.
@@ -560,7 +560,129 @@ continue de bâtir : ce répertoire est, de fait, le miroir des recettes.
 
 Ne pas relancer en boucle pendant une panne d'amont : attendre qu'il réponde.
 
-## 5. Ce qui échoue, et ce que le message veut dire
+## 5. Déployer une VM, et y installer ERPLibre
+
+Les étages 1 à 4 produisent un dépôt de paquets. Cette section en fait une
+image de machine virtuelle amorçable, la publie, et la rend choisissable
+depuis `TODO › Execute › Deploy › QEMU/KVM` d'ERPLibre.
+
+**Ce que l'image contient, et ce qu'elle ne contient pas** : un Arch s390x qui
+amorce, cloud-init, un pacman qui pointe sur le dépôt du portage — et rien
+d'autre. **ERPLibre n'y est pas.** Il s'installe après l'amorçage, par son
+propre installateur, comme sur n'importe quelle autre distribution. C'est la
+condition pour que le déploiement ÉPROUVE l'installateur ; une image où
+ERPLibre serait déjà posé à la main ne prouverait que le talent de celui qui
+l'a posée. Deux scripts de provisionnement ont existé ici et ont été
+supprimés pour cette raison.
+
+### 5.1 Bâtir l'image
+
+`build-image.sh` monte un fichier en boucle, y installe les paquets depuis le
+dépôt local, écrit le secteur d'amorçage avec `zipl`, et démonte. Tout passe
+par un `chroot` et non par `pacman --root` : `--root` n'exécute PAS les
+scriptlets d'installation, et une image bâtie ainsi part avec un magasin de
+certificats vide — chaque client TLS échoue alors sur `error adding trust
+anchors`, très loin de la cause.
+
+```bash
+W=$HOME/work/arch-s390x
+cd ~/git/archlinux-s390x
+REPO2=$W/repo4/s390x \
+IMG=$W/arch-s390x-cloud.img \
+SIZE=8G \
+EL_CLOUD_INIT=1 \
+EL_REPO_SERVER=192.168.123.1:8081 \
+EL_SSH_PUBKEY=$HOME/.ssh/id_ed25519.pub \
+bash scripts/build-image.sh
+```
+
+`REPO2` désigne le dépôt source malgré son nom : il vaut pour n'importe quel
+étage, et c'est le dernier qu'on veut ici. `EL_REPO_SERVER` prend un
+`hôte:port`, pas une URL, et écrit la configuration pacman de l'INVITÉ.
+`SIZE=8G` au lieu des 24 Go par défaut : l'image publiée doit se télécharger,
+et le déploiement l'agrandit de toute façon (§ 5.4). Deux variables
+supplémentaires existent et ne sont pas utilisées ici : `EL_EXTRA_CA`, qui
+ancre une autorité de certification interne pour un réseau derrière un proxy
+qui réécrit TLS, et `EL_ROOT_PASSWORD`. Sans clé NI mot de passe, la console
+série demande une authentification que rien ne peut fournir — le script le
+dit, il ne l'invente pas.
+
+Vérifié : **193 paquets**, 8 Gio apparents pour **1,8 Gio sur le disque**
+(l'image est creuse). Recomptable sans monter quoi que ce soit :
+
+```bash
+debugfs -R "ls -p /var/lib/pacman/local" $W/arch-s390x-cloud.img 2>/dev/null \
+  | awk -F/ 'NF>5 && $3 ~ /^04/ {print $6}' | grep -vE '^\.\.?$' | wc -l
+```
+
+### 5.2 Publier l'image
+
+Le format brut sert à la construction, pas au transport : converti en qcow2
+compressé, le même contenu passe de 1,8 Gio à 665 Mio. Le nom de fichier et
+celui de la somme ne sont pas libres — ERPLibre cherche `{image}.SHA256` pour
+la distribution `arch`, et l'image sous le nom exact ci-dessous.
+
+```bash
+qemu-img convert -c -O qcow2 \
+    $W/arch-s390x-cloud.img \
+    $W/repo4/images/Arch-Linux-s390x-cloudimg.qcow2
+cd $W/repo4/images
+sha256sum Arch-Linux-s390x-cloudimg.qcow2 > Arch-Linux-s390x-cloudimg.qcow2.SHA256
+sha256sum -c Arch-Linux-s390x-cloudimg.qcow2.SHA256
+```
+
+Rien d'autre à lancer : le serveur du § 1 bis sert déjà `repo4` à la racine,
+donc `repo4/images/` répond en `/images/` sur le même port que le dépôt
+pacman. Vérifié : `HTTP/1.0 200 OK` sur
+`http://192.168.123.1:8081/images/Arch-Linux-s390x-cloudimg.qcow2`, et
+`sha256sum -c` qui répond `OK`.
+
+### 5.3 Ce qu'il a fallu changer côté ERPLibre
+
+Trois endroits, parce qu'Arch ne publie aucune image s390x en amont et que le
+code supposait que toute image vient de son éditeur :
+
+- `script/qemu/deploy_qemu.py` — `"arch"` ajouté à `S390X_DISTROS`, et
+  `image_candidates()` rend l'URL locale quand l'architecture est s390x.
+- la base de cette URL est `EL_ARCH_S390X_BASE`, dont le défaut est l'hôte du
+  pont libvirt. Servir depuis ailleurs ne demande donc aucune modification du
+  code, seulement la variable d'environnement.
+- `script/todo/qemu_menu.py` — `"arch"` ajouté à `_QEMU_S390X_DISTROS`. Ce
+  n'est pas un oubli de conception mais une copie de repli : le menu doit
+  s'afficher même quand `deploy_qemu.py` n'est pas importable. Une liste
+  modifiée d'un seul côté donne un menu qui propose un choix que le
+  déploiement refuse, ou l'inverse.
+
+### 5.4 Déployer, puis installer
+
+Depuis `TODO › Execute › Deploy › QEMU/KVM`, choisir l'architecture `s390x`
+puis la distribution `arch`. Le déploiement télécharge l'image, vérifie sa
+somme, l'agrandit (`qemu-img resize`, 25 Gio par défaut — cloud-init étend le
+système de fichiers au premier amorçage), crée la VM, puis lance
+l'installation d'ERPLibre dans l'invité.
+
+Le journal est écrit sur l'hôte, sous
+`~/.erplibre/qemu-install/<horodatage>/erplibre-arch.log`, et se termine par
+`__ERPLIBRE_EXIT__ <code>`. Vérifié de bout en bout : `__ERPLIBRE_EXIT__ 0`,
+Odoo 18.0, 131 chemins d'addons, `erplibre.service` actif.
+
+`/web/login` rend alors **303 et non 200** : aucune base de données n'existe,
+et Odoo redirige vers le sélecteur. C'est le comportement attendu — le
+déploiement installe, il ne crée pas de base. L'écran `a` du suivi
+d'installation offre `./script/database/db_restore.py` pour en créer une.
+
+### 5.5 Les pièges, et ce que chacun donne à l'écran
+
+| À l'écran | La cause réelle |
+|---|---|
+| la VM amorce l'image d'avant, somme comprise | le cache d'images est indexé sur la PRÉSENCE, pas sur la fraîcheur : `/var/lib/libvirt/images/arch-linux-s390x-cloudimg.qcow2` ne porte pas de version, donc une image republiée sous le même nom n'est jamais retéléchargée. Supprimer le fichier du cache, ou versionner le nom publié |
+| l'image sort avec des paquets d'un autre étage | `pacman-image.conf` traînait d'une construction précédente. `build-image.sh` le réécrit désormais quand il désigne un autre dépôt, et le dit |
+| `invalid or corrupted package`, sans nommer lequel | le cache de paquets pacman porte une version périmée. Le vider |
+| `⚠ sommes injoignables, image NON vérifiée : HTTP Error 404` | le fichier `.SHA256` n'a pas été publié à côté de l'image. Le déploiement CONTINUE sans vérifier |
+| le serveur sert encore l'ancienne racine | `systemctl enable --now` NE REDÉMARRE PAS une unité déjà active. `systemctl restart` après toute modification de l'unité |
+| l'installation s'arrête sur une extension Python qui ne compile pas | `install_arch_linux.sh` était la seule distribution sans fragment `script/install/S390x/` : presque aucune roue n'existe pour cette architecture, donc chaque extension se compile et réclame sa bibliothèque système |
+
+## 6. Ce qui échoue, et ce que le message veut dire
 
 | À l'écran | La cause réelle |
 |---|---|
