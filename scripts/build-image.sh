@@ -69,6 +69,12 @@ PKGS=(
     # other machine has to hand a kernel to.
     filesystem glibc bash coreutils systemd systemd-sysvcompat shadow util-linux
     linux s390-tools openssh sudo inetutils which
+    # Ce qu'un administrateur attend d'un systeme vivant, et que l'image
+    # n'avait pas : ps, top et free viennent de procps-ng ; « ip » de
+    # iproute2, dont l'absence prive aussi cloud-init de tout renderer
+    # reseau. nano parce qu'une image sans editeur ne se repare pas a
+    # la main, et parce que le deploiement y copie l'editeur de l'hote.
+    procps-ng iproute2 nano
     # Files, archives, text.
     sed grep gawk findutils diffutils file tar xz bzip2 zlib patch e2fsprogs
     # The toolchain ERPLibre compiles CPython and its wheels with.
@@ -99,6 +105,14 @@ say() { printf '  %s\n' "$*"; }
 # guards this step instead is sign-repo.sh having verified the repository
 # before the image is built.
 REPO2="${REPO2:-$WORK/repo2/s390x}"
+# Rewritten when it names another repository, not only when it is absent. A
+# notice that the packages come from somewhere else only protects a reader
+# who looks; a configuration that follows $REPO2 protects everyone. The file
+# holds nothing worth keeping across a change of stage.
+if [ -f "$CONF" ] && ! grep -qxF "Server = file://$REPO2" "$CONF"; then
+    say "configuration pointed elsewhere, rewritten for $REPO2"
+    rm -f "$CONF"
+fi
 if [ ! -f "$CONF" ]; then
     [ -d "$REPO2" ] || die "no repository at $REPO2, and no configuration at $CONF"
     cat > "$CONF" <<CONFEOF

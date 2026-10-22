@@ -618,6 +618,17 @@ STAGE1_PACKAGES=(
     # sans lui, dest.c reference des champs de struct que son propre #ifdef
     # n'a pas definis, et la compilation s'arrete.
     libdaemon glib2 avahi libpaper cups
+    # L'userland qu'une image de deploiement doit porter, et que le portage
+    # n'avait pas. nano et vim : le deploiement pose l'editeur de l'hote dans
+    # l'invite (qemu_deploy.py, PKGS), et sans aucun des deux l'installation
+    # s'arrete. procps-ng : ps, top, free. htop et libnl : le suivi
+    # interactif, deja demande sur cette machine.
+    nano vim procps-ng libnl htop
+    # gpm : vim le declare pour la souris en console. Petit, et le fournir
+    # evite une divergence de plus dans la recette de vim.
+    # iproute2 : « ip », que cloud-init cherche pour choisir son renderer
+    # reseau et dont l'absence le laissait sans aucun.
+    gpm iproute2
 )
 
 # Packages a stage-1 run is EXPECTED to report as failed.
