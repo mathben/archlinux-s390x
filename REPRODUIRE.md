@@ -631,6 +631,13 @@ sha256sum Arch-Linux-s390x-cloudimg.qcow2 > Arch-Linux-s390x-cloudimg.qcow2.SHA2
 sha256sum -c Arch-Linux-s390x-cloudimg.qcow2.SHA256
 ```
 
+**La somme se republie avec l'image, toujours.** C'est elle, et non le nom
+du fichier, qui périme la copie en cache des hôtes qui ont déjà déployé : le
+déploiement relit le `.SHA256` même quand il saute le téléchargement, et
+reprend l'image dès que les deux divergent. Une image remplacée sans sa somme
+arrête le déploiement suivant ; une image publiée sans somme du tout ne se
+rafraîchit jamais.
+
 Rien d'autre à lancer : le serveur du § 1 bis sert déjà `repo4` à la racine,
 donc `repo4/images/` répond en `/images/` sur le même port que le dépôt
 pacman. Vérifié : `HTTP/1.0 200 OK` sur
@@ -675,10 +682,11 @@ d'installation offre `./script/database/db_restore.py` pour en créer une.
 
 | À l'écran | La cause réelle |
 |---|---|
-| la VM amorce l'image d'avant, somme comprise | le cache d'images est indexé sur la PRÉSENCE, pas sur la fraîcheur : `/var/lib/libvirt/images/arch-linux-s390x-cloudimg.qcow2` ne porte pas de version, donc une image republiée sous le même nom n'est jamais retéléchargée. Supprimer le fichier du cache, ou versionner le nom publié |
+| `Image déjà présente, téléchargement ignoré`, puis `Somme sha256 NON conforme : image reprise une fois.` | ce n'est pas une panne, c'est le rattrapage normal après une republication. Le nom de cache `/var/lib/libvirt/images/arch-linux-s390x-cloudimg.qcow2` ne porte pas de version : ce qui périme une image gardée, c'est la SOMME, relue à chaque déploiement. Le déploiement la reprend seul |
+| `Somme sha256 NON conforme !`, et le déploiement s'arrête | l'image a été republiée sans régénérer son `.SHA256`. Un second écart porte sur des octets fraîchement téléchargés : il arrête tout, et supprime l'image |
 | l'image sort avec des paquets d'un autre étage | `pacman-image.conf` traînait d'une construction précédente. `build-image.sh` le réécrit désormais quand il désigne un autre dépôt, et le dit |
 | `invalid or corrupted package`, sans nommer lequel | le cache de paquets pacman porte une version périmée. Le vider |
-| `⚠ sommes injoignables, image NON vérifiée : HTTP Error 404` | le fichier `.SHA256` n'a pas été publié à côté de l'image. Le déploiement CONTINUE sans vérifier |
+| `⚠ sommes injoignables, image NON vérifiée : HTTP Error 404` | le fichier `.SHA256` n'a pas été publié à côté de l'image. Le déploiement CONTINUE sans vérifier — et c'est LÀ que le cache gèle : sans somme à comparer, une image republiée n'est plus jamais retéléchargée. Même effet avec `--no-verify` |
 | le serveur sert encore l'ancienne racine | `systemctl enable --now` NE REDÉMARRE PAS une unité déjà active. `systemctl restart` après toute modification de l'unité |
 | l'installation s'arrête sur une extension Python qui ne compile pas | `install_arch_linux.sh` était la seule distribution sans fragment `script/install/S390x/` : presque aucune roue n'existe pour cette architecture, donc chaque extension se compile et réclame sa bibliothèque système |
 
