@@ -393,35 +393,25 @@ units disabled. An image with the package and without them reads no seed at
 all, and a deployment that applied nothing looks exactly like a deployment that
 was ignored. `build-image.sh` takes `EL_CLOUD_INIT=1` and enables all four.
 
-### Two images, and only one of them is generic — `scripts/build-erplibre-image.sh`
+### One image, and the deployment installs on it
 
 `build-image.sh` makes an Arch s390x that boots and can be logged into: the
-COMMUNITY image, which a deployment then names, keys and hands an address. The
-other one is ERPLibre already installed -- CPython 3.12.10 compiled by pyenv,
-the wheels built, the database initialised, odoo a systemd unit -- and it is
-made by driving the first: boot it, run provision-erplibre.sh over ssh, shut it
-down.
+COMMUNITY image, which a deployment then names, keys and hands an address.
 
-**A booted guest, not a chroot.** provision-erplibre.sh starts units and reads
-back /web/login over HTTP. A chroot has no PID 1 and shares the host's network,
-so what it proves is not what a deployed machine does.
+A second script used to drive it into a pre-provisioned ERPLibre image, by
+booting the guest and running a provisioning script of this port's own over
+ssh. Both are gone. The installation is ERPLibre's: `make install_production`
+lays the system packages, the interpreter, the wheels, the addons and the
+systemd unit, and `script/install/S390x/arch.sh` carries what s390x needs on
+top. A second implementation of the same thing drifts from the first, and
+this one had: it cloned at `--depth 50`, which makes `repo sync` impossible,
+and off `develop`, whose poetry lock does not match its pyproject.
 
-**AND THE IDENTITY COMES BACK OUT.** Everything installed is meant to be
-identical on every copy; what identifies a MACHINE is not. ssh host keys leave,
-so every deployment does not present the same fingerprint; machine-id is
-emptied rather than deleted, which is how systemd is told to mint a new one at
-first boot -- the journal and the DHCP client identifier both derive from it.
-The build key leaves too: whoever deploys the image brings their own.
-
-The database, the Python environment and the cloned sources STAY. They are the
-product, and regenerating them is the hour this script spends once.
-
-**Watching a remote job from outside is where this bites.** Asking the guest
-whether the provisioning script still runs, by looking for its name in /proc,
-answers yes forever: the ssh command carrying the question has that name in its
-own command line and matches itself. The script's exit status is appended to
-its log instead. That mistake was made five times in one session before it was
-written down.
+**To close:** nothing. A deployment from the bare image installs in about an
+hour on this hardware, and that hour buys an installation that follows
+ERPLibre instead of imitating it. If it ever needs to be paid once rather
+than per machine, the way back is a script that drives `make
+install_production` in a booted guest -- not a reimplementation of it.
 
 ### The image was built by hand — `scripts/build-image.sh`
 

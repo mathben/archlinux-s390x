@@ -68,7 +68,8 @@ EL_REPO_SERVER=<hôte:port> EL_VERIFY_REPO=1 \
   EL_SSH_PUBKEY=~/.ssh/<clé>.pub bash scripts/build-image.sh
 
 # 3. ERPLibre dedans, et l image distribuable qui en sort
-bash scripts/build-erplibre-image.sh
+# L'installation se fait DANS la VM deployee, par la chaine d'ERPLibre :
+#   make install_production
 
 # 4. La faire tourner
 bash scripts/install-libvirt-domain.sh && virsh --connect qemu:///system start arch-s390x
@@ -167,11 +168,11 @@ que l image porte. `run-vm.sh` garde le mode ancien pour une image que zipl n a
 jamais touchée — `KERNEL=` vide demande l IPL, une valeur demande le `-kernel`.
 Monter l image exige que la VM soit éteinte.
 
-`build-erplibre-image.sh` va plus loin : il amorce cette image, y installe
-ERPLibre par ssh, l éteint proprement, puis RETIRE l identité machine — clés
-d hôte ssh, machine-id, journaux, clé de construction. Ce qui reste est le
-produit ; ce qui part est ce qui ferait de chaque copie le clone d une
-machine existante.
+Une image ERPLibre DÉJÀ provisionnée se fabriquait par un second script, qui
+amorçait celle-ci et y lançait un provisionnement propre au portage. Les deux
+sont retirés : l installation est celle d ERPLibre, `make install_production`,
+et le fragment `script/install/S390x/arch.sh` porte ce que s390x exige en
+plus. Une seconde implémentation de la même chose dérive de la première.
 
 ## Où on en est
 
@@ -188,11 +189,10 @@ machine existante.
   postgresql et odoo sont des unités systemd activées : après un
   `systemctl poweroff` et un redémarrage, rien n est tapé dans l invité et le
   service répond.
-- **Deux images se fabriquent.** `build-image.sh` produit un Arch s390x qui
-  amorce seul (zipl), et `build-erplibre-image.sh` le pilote pour en faire une
-  image ERPLibre prête : ERPLibre installé, Odoo servi, puis l identité machine
-  retirée — clés d hôte, machine-id, journaux. Déployée par le TODO d ERPLibre,
-  elle rend 200 sur `/web/login` sans qu on y touche.
+- **Une image se fabrique.** `build-image.sh` produit un Arch s390x qui amorce
+  seul (zipl), avec cloud-init : le TODO d ERPLibre la déploie comme n importe
+  quelle image cloud, puis y installe ERPLibre par sa propre chaîne. Le
+  déploiement installe ; il ne provisionne pas de base de données.
 - **cloud-init est construit** : trente paquets, et `EL_CLOUD_INIT=1` le met
   dans l image avec ses quatre unités.
 - **Étage 3 : 228 paquets sur 231**, et la comparaison est faite : **263
