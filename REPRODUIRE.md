@@ -577,8 +577,9 @@ supprimés pour cette raison.
 
 ### 5.1 Bâtir l'image
 
-`build-image.sh` monte un fichier en boucle, y installe les paquets depuis le
-dépôt local, écrit le secteur d'amorçage avec `zipl`, et démonte. Tout passe
+`build-image.sh` partitionne un fichier, monte la partition en boucle, y
+installe les paquets depuis le dépôt local, écrit le secteur d'amorçage avec
+`zipl`, et démonte. Tout passe
 par un `chroot` et non par `pacman --root` : `--root` n'exécute PAS les
 scriptlets d'installation, et une image bâtie ainsi part avec un magasin de
 certificats vide — chaque client TLS échoue alors sur `error adding trust
@@ -607,12 +608,35 @@ qui réécrit TLS, et `EL_ROOT_PASSWORD`. Sans clé NI mot de passe, la console
 série demande une authentification que rien ne peut fournir — le script le
 dit, il ne l'invente pas.
 
-Vérifié : **193 paquets**, 8 Gio apparents pour **1,8 Gio sur le disque**
-(l'image est creuse). Recomptable sans monter quoi que ce soit :
+**Pourquoi une table de partitions sur une image qui n'en avait pas.** Le
+noyau reçoit son périphérique racine sur la ligne de commande, avant que le
+moindre espace utilisateur existe pour résoudre un nom. Des formes qu'il sait
+résoudre seul, seules `PARTUUID=` et `PARTLABEL=` désignent un système de
+fichiers plutôt qu'un rang d'énumération, et les deux exigent une table.
+`root=/dev/vda` désigne, lui, le premier périphérique virtio-blk dont le
+sondage ABOUTIT — et le sondage est asynchrone. Un invité portant une seed
+cloud-init en second virtio-blk peut démarrer avec la seed en `/dev/vda` et
+paniquer sur `No working init found`, un iso9660 monté en racine. Plus il a
+de processeurs, plus le petit périphérique gagne. L'image porte donc un MBR,
+une partition, et `root=PARTUUID=5390a7c4-01` ; `DISK_ID` permet d'en changer.
+
+Vérifié : **194 paquets**, 8 Gio apparents pour **1,8 Gio sur le disque**
+(l'image est creuse). Recomptable sans monter quoi que ce soit — en donnant à
+`debugfs` le début de la partition, puisque le système de fichiers ne
+commence plus à l'octet 0 :
 
 ```bash
-debugfs -R "ls -p /var/lib/pacman/local" $W/arch-s390x-cloud.img 2>/dev/null \
+debugfs -R "ls -p /var/lib/pacman/local" "$W/arch-s390x-cloud.img?offset=1048576" \
+  2>/dev/null \
   | awk -F/ 'NF>5 && $3 ~ /^04/ {print $6}' | grep -vE '^\.\.?$' | wc -l
+```
+
+Et que l'amorçage tient, lui, se vérifie sur l'image elle-même :
+
+```bash
+sfdisk -l $W/arch-s390x-cloud.img | tail -2   # une partition, secteur 2048
+head -c 4 $W/arch-s390x-cloud.img             # zIPL : le record survit au MBR
+head -c 512 $W/arch-s390x-cloud.img | tail -c 2 | xxd -p   # 55aa
 ```
 
 ### 5.2 Publier l'image
@@ -664,8 +688,10 @@ code supposait que toute image vient de son éditeur :
 
 Depuis `TODO › Execute › Deploy › QEMU/KVM`, choisir l'architecture `s390x`
 puis la distribution `arch`. Le déploiement télécharge l'image, vérifie sa
-somme, l'agrandit (`qemu-img resize`, 25 Gio par défaut — cloud-init étend le
-système de fichiers au premier amorçage), crée la VM, puis lance
+somme, l'agrandit (`qemu-img resize`, 25 Gio par défaut — au premier amorçage
+cloud-init étend la partition avec `growpart`, puis le système de fichiers
+qu'elle porte ; sans `growpart` il n'étendrait ni l'une ni l'autre et ne le
+dirait nulle part), crée la VM, puis lance
 l'installation d'ERPLibre dans l'invité.
 
 Le journal est écrit sur l'hôte, sous
@@ -686,6 +712,7 @@ d'installation offre `./script/database/db_restore.py` pour en créer une.
 | `Somme sha256 NON conforme !`, et le déploiement s'arrête | l'image a été republiée sans régénérer son `.SHA256`. Un second écart porte sur des octets fraîchement téléchargés : il arrête tout, et supprime l'image |
 | l'image sort avec des paquets d'un autre étage | `pacman-image.conf` traînait d'une construction précédente. `build-image.sh` le réécrit désormais quand il désigne un autre dépôt, et le dit |
 | `invalid or corrupted package`, sans nommer lequel | le cache de paquets pacman porte une version périmée. Le vider |
+| `Kernel panic - not syncing: No working init found.` | l'image est antérieure à la table de partitions et son secteur d'amorçage dit `root=/dev/vda`. La seed cloud-init lui a pris la lettre. Reconstruire ; à défaut, déployer avec moins de vCPU fait gagner la course sans la supprimer |
 | `⚠ sommes injoignables, image NON vérifiée : HTTP Error 404` | le fichier `.SHA256` n'a pas été publié à côté de l'image. Le déploiement CONTINUE sans vérifier — et c'est LÀ que le cache gèle : sans somme à comparer, une image republiée n'est plus jamais retéléchargée. Même effet avec `--no-verify` |
 | le serveur sert encore l'ancienne racine | `systemctl enable --now` NE REDÉMARRE PAS une unité déjà active. `systemctl restart` après toute modification de l'unité |
 | l'installation s'arrête sur une extension Python qui ne compile pas | `install_arch_linux.sh` était la seule distribution sans fragment `script/install/S390x/` : presque aucune roue n'existe pour cette architecture, donc chaque extension se compile et réclame sa bibliothèque système |

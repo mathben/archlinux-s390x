@@ -13,7 +13,7 @@ fonctionne, pas quand les paquets compilent.
 | Dépôt étage 1 | `~/work/arch-s390x/repo/s390x` |
 | Dépôt étage 2 | `~/work/arch-s390x/repo2/s390x` |
 | Chroot étage 2 | `~/work/arch-s390x/rootfs-stage2` |
-| Image de déploiement | `~/work/arch-s390x/arch-s390x.img` — 24 Go, ext4, `LABEL=ARCH_S390X` |
+| Image de déploiement | `~/work/arch-s390x/arch-s390x.img` — 24 Go, MBR, une partition ext4, `LABEL=ARCH_S390X`, `PARTUUID=5390a7c4-01` |
 | Domaine libvirt | `arch-s390x`, réseau NAT `default`, autostart |
 | Dépôt servi aux invités | `arch-s390x-repo.service`, l'étage 2 en HTTP sur le pont NAT |
 | Console de la VM | `~/work/arch-s390x/vm-console.txt` |
