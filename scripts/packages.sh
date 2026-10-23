@@ -551,6 +551,18 @@ STAGE1_PACKAGES=(
     # code, and is one of the two build dependencies cloud-init names.
     bash-completion
     cloud-init
+    # growpart, which cloud-init needs to grow the root PARTITION before
+    # it can grow the filesystem on it. cc_growpart knows three resizers
+    # -- growpart, growfs and gpart -- and treats all three missing as
+    # nothing to do: it logs one DEBUG line and returns. A guest then
+    # comes up with the image's own size on a disk the deployment has
+    # already enlarged, and no error says so anywhere. arch=any, a
+    # /bin/sh script over sfdisk, partx and blkid.
+    #
+    # The RECIPE is named cloud-utils and splits into three; the hook
+    # keeps only cloud-guest-utils, because cloud-image-utils names
+    # cdrtools, qemu-img and wget, none of which this port builds.
+    cloud-utils
     # THE CLOSURE STAGE 3 EXPOSED. Four packages that packages already here
     # DEPEND ON and that nothing ever built: stage 2 builds with --nodeps and
     # nothing checked afterwards, so clang, cython, linux-headers and

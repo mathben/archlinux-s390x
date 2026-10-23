@@ -20,6 +20,7 @@ bzip2 655c806171fcb62300d8a056536360615f99be3e https://gitlab.archlinux.org/arch
 ca-certificates d343b61653fb3cfe7a2bdad8a66c0d122ff11a78 https://gitlab.archlinux.org/archlinux/packaging/packages/ca-certificates.git
 clang 83f2d0c620f23adcc099794f071a3b2dbb7e1596 https://gitlab.archlinux.org/archlinux/packaging/packages/clang.git
 cloud-init 500c45cb09d1f82b353242b204231ed41b2c4b29 https://gitlab.archlinux.org/archlinux/packaging/packages/cloud-init.git
+cloud-utils d49001b9ead04bb53f8e186ca7cac4890edc1f3c https://gitlab.archlinux.org/archlinux/packaging/packages/cloud-utils.git
 cmake 34717d0847e2be15bc3b6a66f3a4ab2e430bff2a https://gitlab.archlinux.org/archlinux/packaging/packages/cmake.git
 compiler-rt bd056b1aae566ddd9f982d5a5b9ccae93e50099c https://gitlab.archlinux.org/archlinux/packaging/packages/compiler-rt.git
 coreutils f33db1312f616064d4730f92e793d6a761a69e5a https://gitlab.archlinux.org/archlinux/packaging/packages/coreutils.git
