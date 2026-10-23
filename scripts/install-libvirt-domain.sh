@@ -55,7 +55,7 @@ tmp=""
 trap 'rm -f "$KERNELTAGS_FILE" "$tmp"' EXIT
 if [ -n "$EL_EXTERNAL_KERNEL" ]; then
     KERNEL="$EL_EXTERNAL_KERNEL"
-    printf '    <kernel>%s</kernel>\n    <cmdline>root=/dev/vda rw console=ttysclp0</cmdline>\n' \
+    printf '    <kernel>%s</kernel>\n    <cmdline>root=PARTUUID=5390a7c4-01 rw console=ttysclp0</cmdline>\n' \
         "$KERNEL" > "$KERNELTAGS_FILE"
 fi
 
@@ -81,11 +81,19 @@ else
 echo "== The kernel, read out of the image =="
 # Once here so that `virsh start` has something to boot even before the hook
 # runs; the hook is what keeps it current afterwards.
+# The filesystem no longer starts at byte 0 of the image: it starts at the
+# partition. debugfs reads a filesystem, not a disk, so it has to be given
+# that offset. Derived from the table rather than assumed, so an image with
+# no table -- every one built before the table existed -- still reads.
+_start="$(sfdisk -d "$IMG" 2>/dev/null \
+          | sed -n 's/.*start=[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+IMGFS="$IMG"
+[ -n "$_start" ] && IMGFS="$IMG?offset=$((_start * 512))"
 found=
-for src in $(debugfs -R "ls -p /usr/lib/modules" "$IMG" 2>/dev/null \
+for src in $(debugfs -R "ls -p /usr/lib/modules" "$IMGFS" 2>/dev/null \
              | tr '/' '\n' | grep -E '^[0-9]+\.[0-9]' \
              | sed 's|^|/usr/lib/modules/|;s|$|/vmlinuz|') /boot/vmlinuz-linux; do
-    if debugfs -R "dump $src $KERNEL.new" "$IMG" 2>/dev/null && [ -s "$KERNEL.new" ]; then
+    if debugfs -R "dump $src $KERNEL.new" "$IMGFS" 2>/dev/null && [ -s "$KERNEL.new" ]; then
         mv "$KERNEL.new" "$KERNEL"; found="$src"; break
     fi
     rm -f "$KERNEL.new"

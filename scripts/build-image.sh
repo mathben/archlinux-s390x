@@ -40,6 +40,24 @@ CONF="${CONF:-$WORK/pacman-image.conf}"
 CACHE="${CACHE:-$WORK/pacman-el.cache}"
 SIZE="${SIZE:-24G}"
 LABEL="${LABEL:-ARCH_S390X}"
+# THE DISK SIGNATURE, AND THE PARTUUID THE KERNEL DERIVES FROM IT.
+#
+# The kernel is handed its root device on the command line, before any
+# userspace exists to resolve a name into a device. Of the forms it can
+# resolve by itself, only PARTUUID= and PARTLABEL= designate a filesystem
+# rather than an enumeration slot, and both need a partition table -- hence
+# one here, on an image that was a bare filesystem.
+#
+# The value is FIXED, not drawn at build time, so that two runs of this
+# script on the same repository produce the same image. The cost: every
+# guest deployed from one image carries the same PARTUUID, so attaching two
+# such root disks to a single guest makes it ambiguous again. That is what
+# DISK_ID is overridable for.
+DISK_ID="${DISK_ID:-0x5390a7c4}"
+PARTUUID="${DISK_ID#0x}-01"
+# 1 MiB of alignment. It is also the offset zipl is given: zipl records
+# ABSOLUTE disk blocks, so it has to be told where the partition starts.
+PART_START="${PART_START:-2048}"
 HOSTNAME_="${HOSTNAME_:-arch-s390x}"
 # Optional, and deliberately without defaults -- see the header.
 EL_SSH_PUBKEY="${EL_SSH_PUBKEY:-}"
@@ -129,18 +147,29 @@ fi
 # configuration silently is how an image gets built from the wrong stage.
 say "packages come from $(awk -F'file://' '/^Server/{print $2; exit}' "$CONF")"
 command -v mkfs.ext4 >/dev/null || die "e2fsprogs is not installed on the host"
+# Both from util-linux, and both needed before the first long step rather
+# than in the middle of it.
+command -v sfdisk >/dev/null || die "sfdisk is not installed on the host"
+command -v losetup >/dev/null || die "losetup is not installed on the host"
 [ "$(uname -m)" = s390x ] || die "the chroot step needs an s390x host"
 
 # Bind mounts inside a tree that gets removed have already followed into the
 # host's /dev once in this project. Everything unmounts through one trap, in
 # reverse order, whatever happens.
 CLEANUP=()
+# `mount -o loop` detaches the device when the filesystem is unmounted; a
+# loop device set up by hand does not. A run that dies between the two
+# leaves it attached to the image file, and the next run refuses to
+# overwrite a file something still holds.
+_loop=""
 cleanup() {
     local i
     for (( i=${#CLEANUP[@]}-1 ; i>=0 ; i-- )); do
         sudo umount "${CLEANUP[i]}" 2>/dev/null || true
     done
     sudo umount "$MNT" 2>/dev/null || true
+    [ -n "$_loop" ] && sudo losetup -d "$_loop" 2>/dev/null
+    return 0
 }
 trap cleanup EXIT
 
@@ -148,17 +177,37 @@ if [ -e "$IMG" ]; then
     die "$IMG exists -- move it aside; this script does not overwrite an image"
 fi
 
-echo "== The filesystem =="
+echo "== The disk =="
 truncate -s "$SIZE" "$IMG"
-mkfs.ext4 -q -F -L "$LABEL" "$IMG"
-say "$SIZE sparse, ext4, LABEL=$LABEL"
+# The table goes down FIRST. sfdisk rewrites the first sector, and the IPL
+# record zipl writes at the end of this script lives in the first bytes of
+# that same sector: the two coexist only in this order.
+sfdisk -q "$IMG" >/dev/null <<EOF
+label: dos
+label-id: $DISK_ID
+unit: sectors
+start=$PART_START, type=83, bootable
+EOF
+say "MBR, one partition from sector $PART_START, PARTUUID=$PARTUUID"
+# -P, so the kernel exposes the partition as ${_loop}p1. Without it the loop
+# device has no children and the mkfs below would write over the table.
+_loop="$(sudo losetup -f --show -P "$IMG")"
+[ -b "${_loop}p1" ] || die "no partition device at ${_loop}p1 after losetup -P"
+sudo mkfs.ext4 -q -F -L "$LABEL" "${_loop}p1"
+say "$SIZE sparse, ext4 on ${_loop}p1, LABEL=$LABEL"
 
 sudo mkdir -p "$MNT"
-sudo mount -o loop "$IMG" "$MNT"
+sudo mount "${_loop}p1" "$MNT"
 say "mounted on $MNT"
 
 if [ -n "$EL_CLOUD_INIT" ]; then
-    PKGS+=(cloud-init)
+    # cloud-guest-utils is growpart. cloud-init grows the root FILESYSTEM at
+    # first boot, but on a partitioned disk the partition under it has to be
+    # grown first, and growpart is the only resizer cc_growpart can find on
+    # Linux. Missing, it writes one DEBUG line and returns: the guest comes
+    # up at the image's own size on a disk the deployment has already
+    # enlarged, and nothing anywhere reports it.
+    PKGS+=(cloud-init cloud-guest-utils)
 fi
 
 echo "== Packages =="
@@ -173,7 +222,9 @@ say "$(sudo ls "$MNT/var/lib/pacman/local" | wc -l) packages installed"
 echo "== Configuration =="
 sudo tee "$MNT/etc/fstab" >/dev/null <<EOF
 # The root is found by LABEL, not by /dev/vda: a second disk, or a different
-# bus order, renames the device and not the label.
+# bus order, renames the device and not the label. A label works in this file
+# and not on the kernel command line, because systemd reads it with udev
+# already running.
 LABEL=$LABEL  /  ext4  rw,relatime  0 1
 EOF
 echo "$HOSTNAME_" | sudo tee "$MNT/etc/hostname" >/dev/null
@@ -255,10 +306,18 @@ echo "== Boot record =="
 _kver="$(sudo ls "$MNT/usr/lib/modules" | head -1)"
 [ -n "$_kver" ] || die "no kernel under /usr/lib/modules in the image"
 sudo install -Dm644 "$MNT/usr/lib/modules/$_kver/vmlinuz" "$MNT/boot/vmlinuz-linux"
-# root=/dev/vda, not root=LABEL=: resolving a label is udev's work, and udev
-# lives in an initramfs this image deliberately does not have. The device name
-# is the guest's, not this host's -- zipl records block addresses, and the loop
-# device it writes through maps one to one onto the file.
+# root=PARTUUID=, and neither root=LABEL= nor root=/dev/vda.
+#
+# A label is resolved by udev, which lives in an initramfs this image
+# deliberately does not have. A device name is resolved by nothing at all:
+# the vd* letters are handed out as virtio-blk probes COMPLETE, and probing
+# is asynchronous, so the order is not the bus order. A guest holding a
+# second virtio-blk device -- a cloud-init seed is one -- can come up with
+# that seed as /dev/vda and panic mounting iso9660 as its root. The more
+# processors the guest has, the likelier the smaller device finishes first.
+#
+# PARTUUID is resolved by the KERNEL, out of the partition table, with no
+# userspace involved.
 sudo tee "$MNT/etc/zipl.conf" >/dev/null <<EOF
 [defaultboot]
 default=arch
@@ -266,27 +325,28 @@ default=arch
 [arch]
 target=/boot
 image=/boot/vmlinuz-linux
-parameters="root=/dev/vda rw console=ttysclp0"
+parameters="root=PARTUUID=$PARTUUID rw console=ttysclp0"
 EOF
 # WHY THE COMMAND LINE AND NOT zipl.conf. Reading its config, zipl asks the
 # kernel for the geometry of the device holding /boot and stops on a loop
 # device -- `Error: Could not get disk geometry`. The --target* options exist
 # for exactly this: installing onto a device that is not the one running. The
 # geometry is not guessed, it is declared: a plain SCSI-scheme disk, 512-byte
-# blocks, no partition table, no offset.
+# blocks, and the sector the partition holding /boot starts at. That offset
+# is what turns a block number inside the partition into a block number on
+# the disk; wrong, the record lands somewhere else and the image never IPLs.
 #
 # The zipl.conf written above is for the GUEST, where `zipl` after a kernel
 # upgrade must work with no arguments; it deliberately names no targetbase,
 # because the loop device belongs to this host and not to the image.
-_loop="$(losetup -j "$IMG" | head -1 | cut -d: -f1)"
 [ -n "$_loop" ] || die "cannot find the loop device backing $IMG"
 sudo chroot "$MNT" /usr/bin/zipl \
     --image=/boot/vmlinuz-linux \
-    --parameters="root=/dev/vda rw console=ttysclp0" \
+    --parameters="root=PARTUUID=$PARTUUID rw console=ttysclp0" \
     --target=/boot --targetbase="$_loop" \
-    --targettype=SCSI --targetblocksize=512 --targetoffset=0 \
+    --targettype=SCSI --targetblocksize=512 --targetoffset="$PART_START" \
     >/dev/null || die "zipl failed to write the boot record"
-say "zipl: $_kver, IPL from the disk itself"
+say "zipl: $_kver, root=PARTUUID=$PARTUUID, IPL from the disk itself"
 
 echo "== Root access =="
 if [ -n "$EL_SSH_PUBKEY" ]; then

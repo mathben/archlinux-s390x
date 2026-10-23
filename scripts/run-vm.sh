@@ -115,7 +115,11 @@ QEMU_ARGS=(
 if [ -n "$KERNEL" ]; then
     QEMU_ARGS+=(
         -kernel "$KERNEL"
-        -append "root=/dev/vda rw console=ttysclp0 systemd.journald.forward_to_console=1"
+        # PARTUUID, not /dev/vda: the image is partitioned, and the device
+        # name is handed out by probe completion order rather than by bus
+        # order. This path attaches one disk and would survive the name,
+        # but it would mount a partition table as a filesystem.
+        -append "root=PARTUUID=5390a7c4-01 rw console=ttysclp0 systemd.journald.forward_to_console=1"
     )
 fi
 
